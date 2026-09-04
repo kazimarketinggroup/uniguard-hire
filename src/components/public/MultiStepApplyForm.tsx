@@ -126,6 +126,7 @@ const emptyForm = {
   nokName: '', nokAddress: '', nokPostcode: '', nokTelephone: '', nokMobile: '', nokRelationship: '',
   charRefName: '', charRefAddress: '', charRefPostcode: '', charRefTelephone: '', charRefKnown: '',
   criminalDetails: '', agree1: false, agree2: false, printName: '', signature: '', sigDate: '',
+  rtwNationality: 'british', shareCode: '', rtwDocName: '', rtwDocUrl: '',
 };
 
 const sampleActivity = (id: number, type: string, title: string, from: string, to: string, mobile: string, email: string): ActivityItem => ({ id, type, title, from, to, evidence: '', mobile, email, file: null });
@@ -158,6 +159,7 @@ export const MultiStepApplyForm: React.FC = () => {
   ]);
 
   const [picker, setPicker] = useState<{ id: number; field: 'from' | 'to'; year: number; month: number | null } | null>(null);
+  const [rtwFile, setRtwFile] = useState<File | null>(null);
   const [popFlash, setPopFlash] = useState(0);
   const [evidenceError, setEvidenceError] = useState(false);
   const [activityError, setActivityError] = useState('');
@@ -280,13 +282,44 @@ export const MultiStepApplyForm: React.FC = () => {
         storedActivities = uploaded;
       }
 
+      let finalForm = { ...form };
+      let extraDocs: any[] = [];
+      if (rtwFile && user) {
+        const compressed = await compressEvidence(rtwFile);
+        const ext = compressed.name.match(/\.[^.]+$/)?.[0] || '.pdf';
+        const path = `${user.id}/rtw-${Date.now()}${ext}`;
+        const { error: upErr } = await supabase.storage.from('evidence').upload(path, compressed, { cacheControl: '3600', upsert: false });
+        if (!upErr) {
+          const { data } = supabase.storage.from('evidence').getPublicUrl(path);
+          finalForm.rtwDocUrl = data.publicUrl;
+          extraDocs.push({
+            id: `doc-rtw-${Date.now()}`,
+            name: `Right_to_Work_Passport${ext}`,
+            type: 'passport',
+            fileUrl: data.publicUrl,
+            uploadedAt: new Date().toISOString().split('T')[0],
+            size: `${(compressed.size / 1024 / 1024).toFixed(1)} MB`
+          });
+        }
+      } else if (rtwFile) {
+        finalForm.rtwDocUrl = URL.createObjectURL(rtwFile);
+        extraDocs.push({
+          id: `doc-rtw-${Date.now()}`,
+          name: rtwFile.name,
+          type: 'passport',
+          fileUrl: finalForm.rtwDocUrl,
+          uploadedAt: new Date().toISOString().split('T')[0],
+          size: `${(rtwFile.size / 1024 / 1024).toFixed(1)} MB`
+        });
+      }
+
       const { error: insertError } = await supabase.from('applications').insert({
         applicant_email: publicUser?.email || user?.email || '',
         user_id: user?.id,
         full_name: form.fullName,
         applied_job: selectedJob?.title || '',
         status: 'applied',
-        form_data: { ...form, activities: storedActivities },
+        form_data: { ...finalForm, activities: storedActivities, documents: extraDocs },
       });
       if (insertError) throw new Error(`Could not save application: ${insertError.message}`);
 
@@ -1004,17 +1037,86 @@ export const MultiStepApplyForm: React.FC = () => {
             {current === 5 && (
               <div className="space-y-6">
                 <fieldset className="border-none p-0">
+                  <legend className="text-sm font-bold text-primary uppercase tracking-wider pb-3 border-b border-line w-full mb-4">Right to Work Verification (Upload Required)</legend>
+                  <div className="p-5 rounded-xl border border-line bg-panel space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-secondary mb-2">Select your nationality / Right to Work status <span style={{ color: '#AF7C28' }}>•</span></label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => update('rtwNationality', 'british')}
+                          className={`p-3.5 rounded-xl border text-left font-medium transition-all ${form.rtwNationality === 'british' ? 'border-amber-400 bg-amber-500/10 text-amber-700' : 'border-line text-secondary hover:border-line-strong'}`}
+                        >
+                          <div className="text-xs font-bold text-primary">British / Irish Citizen</div>
+                          <div className="text-[11px] text-faint mt-0.5">Upload UK / Irish Passport</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => update('rtwNationality', 'non_british')}
+                          className={`p-3.5 rounded-xl border text-left font-medium transition-all ${form.rtwNationality === 'non_british' ? 'border-amber-400 bg-amber-500/10 text-amber-700' : 'border-line text-secondary hover:border-line-strong'}`}
+                        >
+                          <div className="text-xs font-bold text-primary">Non-British / UK Visa Holder</div>
+                          <div className="text-[11px] text-faint mt-0.5">Upload Passport & Share Code</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-secondary mb-1.5">
+                        {form.rtwNationality === 'british' ? 'Upload British / Irish Passport' : 'Upload International Passport / Visa Document'} <span style={{ color: '#AF7C28' }}>•</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              const f = e.target.files[0];
+                              setRtwFile(f);
+                              update('rtwDocName', f.name);
+                            }
+                          }}
+                        />
+                        <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-center gap-2 px-3 cursor-pointer hover:border-line-strong">
+                          <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                          <span className={`text-xs truncate ${form.rtwDocName ? 'font-bold text-amber-600' : 'text-faint'}`}>
+                            {form.rtwDocName || 'Click to select passport/document (PDF, JPG, PNG)'}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-faint">PDF, JPG, PNG, WebP or Word — max 10MB</p>
+                    </div>
+
+                    {form.rtwNationality === 'non_british' && (
+                      <div>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">Home Office Share Code <span style={{ color: '#AF7C28' }}>•</span></label>
+                        <input
+                          type="text"
+                          required
+                          value={form.shareCode}
+                          onChange={e => update('shareCode', e.target.value.toUpperCase())}
+                          placeholder="e.g. 9W8 7Y6 5X4"
+                          className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel font-mono tracking-wider uppercase"
+                        />
+                        <p className="text-[11px] text-faint mt-1">Generate your code at <a href="https://www.gov.uk/prove-right-to-work" target="_blank" rel="noreferrer" className="text-amber-600 underline font-semibold">gov.uk/prove-right-to-work</a></p>
+                      </div>
+                    )}
+                  </div>
+                </fieldset>
+
+                <fieldset className="border-none p-0">
                   <legend className="text-sm font-bold text-primary uppercase tracking-wider pb-3 border-b border-line w-full mb-4">What gets checked</legend>
                   <div className="space-y-4">
                     {[
-                      { title: 'Financial history', tag: 'CREDIT CHECK', desc: 'Required for all applicants under BS 7858. Results may be shared with credit reference agencies.' },
-                      { title: 'Right to work', tag: 'UK / NON-UK', desc: 'UK nationals: passport check. Non-UK nationals: passport plus visa/permit verification.' },
-                      { title: 'Sanctions & terrorism check', tag: 'GLOBAL', desc: 'Cross-referenced against UK sanctions lists and global watch lists.' },
+                      { title: 'Financial history & Credit Check', tag: 'MANDATORY BS 7858', desc: 'Required for all security personnel under BS 7858 standards. Credit reference audit will be performed.' },
+                      { title: 'Right to Work Verification', tag: 'GOVERNMENT AUDITED', desc: form.rtwNationality === 'non_british' ? 'Passport check + official UK Home Office Share Code validation.' : 'UK / Irish Passport verification.' },
+                      { title: 'Sanctions & Terrorism Check', tag: 'GLOBAL WATCHLIST', desc: 'Cross-referenced against UK sanctions lists and global security watch lists.' },
                     ].map(item => (
                       <div key={item.title} className="p-5 rounded-xl border border-line bg-panel-2">
                         <div className="flex items-start justify-between mb-2">
                           <h4 className="font-bold text-primary text-sm">{item.title}</h4>
-                          <span className="text-[10px] font-mono font-semibold tracking-wider px-2 py-0.5 rounded bg-panel border border-line text-secondary">{item.tag}</span>
+                          <span className="text-[10px] font-mono font-semibold tracking-wider px-2 py-0.5 rounded bg-panel border border-line text-amber-600">{item.tag}</span>
                         </div>
                         <p className="text-xs text-secondary leading-relaxed">{item.desc}</p>
                       </div>

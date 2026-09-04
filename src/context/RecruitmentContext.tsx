@@ -28,10 +28,10 @@ import { STAGE_LABEL } from '../components/common/recruitmentStages';
 const VALID_STAGES: ApplicationStage[] = ['applied', 'under_review', 'interview_scheduled', 'interview_completed', 'vetting_in_progress', 'ready_for_contract', 'contract_sent', 'hired', 'rejected'];
 
 const defaultChecks = (id: string): VettingCheckItem[] => [
-  { id: `chk-1-${id}`, type: 'right_to_work', title: 'Right to Work (UK)', description: 'Verify UK Passport or Home Office Share Code', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/prove-right-to-work' },
-  { id: `chk-2-${id}`, type: 'sia_licence', title: 'SIA Licence Verification', description: 'Check Home Office SIA Public Register', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://services.sia.homeoffice.gov.uk/licence-checker' },
+  { id: `chk-1-${id}`, type: 'right_to_work', title: 'Right to Work (UK)', description: 'Verify UK Passport or Home Office Share Code', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/check-job-applicant-right-to-work' },
+  { id: `chk-2-${id}`, type: 'sia_licence', title: 'SIA Licence Verification', description: 'Check Home Office SIA Public Register', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/check-a-private-security-licence' },
   { id: `chk-3-${id}`, type: 'references', title: '5-Year Reference Check', description: 'Contact previous security employers', isRequired: true, status: 'pending', notes: '', externalUrl: '#' },
-  { id: `chk-4-${id}`, type: 'credit_check', title: 'Credit Check (Optional)', description: 'Optional financial audit', isRequired: false, status: 'pending', notes: '', externalUrl: 'https://www.experian.co.uk' },
+  { id: `chk-4-${id}`, type: 'credit_check', title: 'Credit Check (Mandatory BS 7858)', description: 'Financial history and credit audit under BS 7858 standards', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.experian.co.uk' },
   { id: `chk-5-${id}`, type: 'companies_house', title: 'Companies House Check', description: 'Check director listings', isRequired: false, status: 'pending', notes: '', externalUrl: 'https://find-and-update.company-information.service.gov.uk' },
 ];
 
@@ -68,7 +68,7 @@ interface RecruitmentContextType {
   setSelectedStageFilter: (stage: string) => void;
   
   // Actions
-  updateCheckStatus: (applicantId: string, checkType: VettingCheckType, status: CheckStatus, notes?: string) => void;
+  updateCheckStatus: (applicantId: string, checkType: VettingCheckType, status: CheckStatus, notes?: string, proofUrl?: string, proofName?: string) => void;
   updateApplicantStage: (applicantId: string, stage: ApplicationStage) => void;
   scheduleInterview: (applicantId: string, interview: Omit<InterviewInfo, 'id'>) => void;
   completeInterview: (applicantId: string, notes: string, rating: number, passed: boolean) => void;
@@ -285,6 +285,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       appliedJobTitle: row.applied_job || '',
       appliedDate: (row.created_at || '').slice(0, 10),
       currentStage: VALID_STAGES.includes(row.status) ? row.status : 'applied',
+      dob: fd.dob || '',
+      rtwNationality: fd.rtwNationality || (fd.shareCode ? 'non_british' : 'british'),
+      shareCode: fd.shareCode || '',
+      rtwDocUrl: fd.rtwDocUrl || '',
       documents: docs,
       vettingChecks: storedChecks
         ? (storedChecks as any[]).map((c, i) => ({
@@ -296,6 +300,8 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
             status: (['approved', 'rejected', 'pending'] as CheckStatus[]).includes(c.status) ? c.status : 'pending',
             notes: c.notes || '',
             externalUrl: c.externalUrl || '#',
+            proofUrl: c.proofUrl,
+            proofName: c.proofName,
             verifiedBy: c.verifiedBy,
             verifiedAt: c.verifiedAt,
           }))
@@ -1156,7 +1162,9 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     applicantId: string, 
     checkType: VettingCheckType, 
     status: CheckStatus, 
-    notes?: string
+    notes?: string,
+    proofUrl?: string,
+    proofName?: string
   ) => {
     const applicant = applicants.find(a => a.id === applicantId);
     if (!applicant) return;
@@ -1172,6 +1180,8 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
         notes: notes !== undefined ? notes : check.notes,
         verifiedBy: status !== 'pending' ? 'Admin User' : undefined,
         verifiedAt: status !== 'pending' ? formattedDate : undefined,
+        proofUrl: proofUrl !== undefined ? proofUrl : check.proofUrl,
+        proofName: proofName !== undefined ? proofName : check.proofName,
       };
     });
 
@@ -1694,10 +1704,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
         { id: `doc-${Date.now()}`, name: 'Applicant_CV.pdf', type: 'cv', fileUrl: '#', uploadedAt: new Date().toISOString().split('T')[0], size: '1.0 MB' }
       ],
       vettingChecks: [
-        { id: `chk-1-${newId}`, type: 'right_to_work', title: 'Right to Work (UK)', description: 'Verify UK Passport or Home Office Share Code', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/prove-right-to-work' },
-        { id: `chk-2-${newId}`, type: 'sia_licence', title: 'SIA Licence Verification', description: 'Check Home Office SIA Public Register', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://services.sia.homeoffice.gov.uk/licence-checker' },
+        { id: `chk-1-${newId}`, type: 'right_to_work', title: 'Right to Work (UK)', description: 'Verify UK Passport or Home Office Share Code', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/check-job-applicant-right-to-work' },
+        { id: `chk-2-${newId}`, type: 'sia_licence', title: 'SIA Licence Verification', description: 'Check Home Office SIA Public Register', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.gov.uk/check-a-private-security-licence' },
         { id: `chk-3-${newId}`, type: 'references', title: '5-Year Reference Check', description: 'Contact previous security employers', isRequired: true, status: 'pending', notes: '', externalUrl: '#' },
-        { id: `chk-4-${newId}`, type: 'credit_check', title: 'Credit Check (Optional)', description: 'Optional financial audit', isRequired: false, status: 'pending', notes: '', externalUrl: 'https://www.experian.co.uk' },
+        { id: `chk-4-${newId}`, type: 'credit_check', title: 'Credit Check (Mandatory BS 7858)', description: 'Financial history and credit audit under BS 7858 standards', isRequired: true, status: 'pending', notes: '', externalUrl: 'https://www.experian.co.uk' },
         { id: `chk-5-${newId}`, type: 'companies_house', title: 'Companies House Check', description: 'Check director listings', isRequired: false, status: 'pending', notes: '', externalUrl: '#' }
       ]
     };

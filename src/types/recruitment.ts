@@ -18,6 +18,8 @@ export interface VettingCheckItem {
   verifiedBy?: string;
   verifiedAt?: string;
   externalUrl?: string; // Quick link to UK government / SIA check portal
+  proofUrl?: string; // Uploaded proof screenshot or document
+  proofName?: string;
 }
 
 export type ApplicationStage = 
@@ -68,6 +70,11 @@ export interface Applicant {
   appliedDate: string;
   currentStage: ApplicationStage;
   avatarUrl?: string;
+  dob?: string;
+  rtwNationality?: 'british' | 'non_british';
+  shareCode?: string;
+  rtwDocUrl?: string;
+  _rawFormData?: any;
   
   // Workflow checklist & data
   vettingChecks: VettingCheckItem[];

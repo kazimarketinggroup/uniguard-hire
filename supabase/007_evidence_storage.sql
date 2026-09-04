@@ -23,8 +23,8 @@
 -- satisfies `[1] = auth.uid()`. The `[2]` clause keeps legacy
 -- `evidence/{uid}/file` paths working too.
 insert into storage.buckets (id, name, public)
-values ('evidence', 'evidence', false)
-on conflict (id) do update set public = false;
+values ('evidence', 'evidence', true)
+on conflict (id) do update set public = true;
 
 create or replace function public.check_evidence_upload()
 returns trigger

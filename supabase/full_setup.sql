@@ -255,12 +255,12 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values (
   'evidence', 
   'evidence', 
-  false, 
+  true, 
   10485760, 
   array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 )
 on conflict (id) do update set 
-  public = false, 
+  public = true, 
   file_size_limit = 10485760,
   allowed_mime_types = array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
