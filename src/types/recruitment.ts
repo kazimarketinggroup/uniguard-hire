@@ -33,10 +33,19 @@ export type ApplicationStage =
   | 'hired'                 // 10. Applicant becomes Employee
   | 'rejected';
 
+export interface BankDetails {
+  bankName: string;
+  accountHolderName: string;
+  sortCode: string;
+  accountNumber: string;
+  docUrl?: string;
+  docName?: string;
+}
+
 export interface ApplicantDocument {
   id: string;
   name: string;
-  type: 'cv' | 'passport' | 'sia_badge' | 'proof_address' | 'reference_letter' | 'contract';
+  type: 'cv' | 'passport' | 'sia_badge' | 'proof_address' | 'proof_ni' | 'bank_details' | 'act_certificate' | 'reference_letter' | 'contract';
   fileUrl: string;
   uploadedAt: string;
   size: string;
@@ -74,6 +83,16 @@ export interface Applicant {
   rtwNationality?: 'british' | 'non_british';
   shareCode?: string;
   rtwDocUrl?: string;
+  passportDocName?: string;
+  passportDocUrl?: string;
+  bankDetails?: BankDetails;
+  actCertName?: string;
+  actCertUrl?: string;
+  approvedByAdmin?: boolean;
+  approvedAt?: string;
+  companyDocsSigned?: boolean;
+  companyDocsSignedAt?: string;
+  companyDocsSignerName?: string;
   _rawFormData?: any;
   
   // Workflow checklist & data

@@ -34,11 +34,12 @@ export const ApplicantDrawer: React.FC = () => {
     applicants,
     updateCheckStatus, 
     sendContract, 
-    convertToEmployee,
     fireEmployee,
     updateApplicantStage,
     scheduleInterviewLive,
-    showToast
+    showToast,
+    approveApplication,
+    completeHiring
   } = useRecruitment();
 
   const [activeTab, setActiveTab] = useState<'vetting' | 'personal' | 'interview'>('vetting');
@@ -201,15 +202,31 @@ export const ApplicantDrawer: React.FC = () => {
 
             {/* Lifecycle Buttons */}
             <div className="flex items-center gap-2">
-              {applicant.currentStage === 'ready_for_contract' && (
+              {!applicant.approvedByAdmin && applicant.currentStage !== 'hired' && applicant.currentStage !== 'rejected' && (
+                <button
+                  onClick={() => approveApplication(applicant.id)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#AF7C28] to-[#c99a3e] hover:brightness-110 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all"
+                  title="Approve applicant and release company onboarding documents to candidate dashboard"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> Approve & Release Documents
+                </button>
+              )}
+
+              {applicant.approvedByAdmin && applicant.currentStage !== 'hired' && (
+                <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Approved by Admin
+                </span>
+              )}
+
+              {applicant.currentStage === 'ready_for_contract' && !applicant.approvedByAdmin && (
                 <button onClick={() => sendContract(applicant.id)} className="px-4 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all">
                   <Send className="w-3.5 h-3.5" /> Send Contract
                 </button>
               )}
 
               {applicant.currentStage === 'contract_sent' && (
-                <button onClick={() => convertToEmployee(applicant.id)} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all">
-                  <UserCheck className="w-3.5 h-3.5" /> Mark Signed & Add to Roster
+                <button onClick={() => completeHiring(applicant.id, applicant.fullName)} className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all">
+                  <UserCheck className="w-3.5 h-3.5" /> Mark Hiring Complete
                 </button>
               )}
 
@@ -436,13 +453,44 @@ export const ApplicantDrawer: React.FC = () => {
                               </div>
                             </div>
                           )}
+
+                          {/* Candidate Uploaded SIA Badge Copy */}
+                          {(() => {
+                            const badgeDoc = applicant.documents.find(d => d.type === 'sia_badge' || d.name.toLowerCase().includes('sia_badge')) || (fd.siaBadgeDocUrl ? { name: fd.siaBadgeDocName || 'SIA_Badge.jpg', fileUrl: fd.siaBadgeDocUrl } : null);
+                            if (!badgeDoc) return null;
+                            return (
+                              <div className="p-2.5 rounded-lg bg-panel border border-amber-500/30 flex items-center justify-between mt-2">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-[#AF7C28]" />
+                                  <span className="text-xs font-medium text-primary truncate max-w-[200px]">Candidate Badge: {badgeDoc.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewDoc(formatSmartFilename('Candidate_SIA_Badge', badgeDoc.fileUrl), badgeDoc.fileUrl)}
+                                    className="text-xs font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> View Badge
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDirectDownload(formatSmartFilename('Candidate_SIA_Badge', badgeDoc.fileUrl), badgeDoc.fileUrl)}
+                                    className="text-xs font-bold text-tertiary hover:text-primary flex items-center gap-1"
+                                    title="Download Badge"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
                       {/* --- CUSTOM WIDGET 3: 5-YEAR REFERENCE CHECK (ALL 5 YEARS VISIBLE) --- */}
                       {check.type === 'references' && (
                         <div className="p-3.5 rounded-xl border border-line bg-panel-2 space-y-3">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between pt-1">
                             <span className="text-xs font-bold text-primary">Candidate Submitted 5-Year History:</span>
                             <span className="text-[11px] font-mono text-tertiary">
                               {((fd.activities || []) as any[]).length} Entry / Entries Listed
@@ -578,41 +626,257 @@ export const ApplicantDrawer: React.FC = () => {
           )}
 
           {/* TAB 2: PERSONAL & DOCS */}
-          {activeTab === 'personal' && (
-            <div className="space-y-5 text-xs">
-              <div className="grid grid-cols-2 gap-4 p-5 rounded-2xl bg-panel border border-line">
-                <div><span className="text-tertiary block">Full Name:</span> <span className="text-primary font-bold text-sm">{applicant.fullName}</span></div>
-                <div><span className="text-tertiary block">Email Address:</span> <span className="text-primary font-medium">{applicant.email}</span></div>
-                <div><span className="text-tertiary block">Phone Number:</span> <span className="text-primary">{applicant.phone || 'N/A'}</span></div>
-                <div><span className="text-tertiary block">National Insurance No:</span> <span className="font-mono text-emerald-600 font-bold">{applicant.nationalInsuranceNo || 'N/A'}</span></div>
-                <div><span className="text-tertiary block">SIA Licence No:</span> <span className="font-mono text-amber-600 font-bold">{applicant.siaLicenceNo || 'N/A'} ({applicant.siaLicenceSector})</span></div>
-                <div><span className="text-tertiary block">UK Address:</span> <span className="text-primary">{applicant.address}, {applicant.postcode}</span></div>
-              </div>
+          {activeTab === 'personal' && (() => {
+            const fd = (applicant as any)._rawFormData || {};
+            const niProofUrl = fd.niProofDocUrl || applicant.documents.find(d => d.type === 'proof_ni')?.fileUrl;
+            const siaBadgeUrl = fd.siaBadgeDocUrl || applicant.documents.find(d => d.type === 'sia_badge')?.fileUrl;
+            const addr1Url = fd.proofAddress1Url || applicant.documents.find(d => d.name.includes('Proof_of_Address_1'))?.fileUrl;
+            const addr2Url = fd.proofAddress2Url || applicant.documents.find(d => d.name.includes('Proof_of_Address_2'))?.fileUrl;
+            const passportUrl = applicant.passportDocUrl || fd.passportDocUrl || fd.rtwDocUrl || applicant.documents.find(d => d.type === 'passport' || d.name.toLowerCase().includes('passport'))?.fileUrl;
+            const actCertUrl = applicant.actCertUrl || fd.actCertDocUrl || fd.actCertUrl || applicant.documents.find(d => d.type === 'act_certificate' || d.name.toLowerCase().includes('act'))?.fileUrl;
+            
+            const bank = applicant.bankDetails || fd.bankDetails || {
+              bankName: fd.bankName || '',
+              accountHolderName: fd.accountHolderName || '',
+              sortCode: fd.sortCode || '',
+              accountNumber: fd.accountNumber || '',
+              docUrl: fd.bankDocUrl || '',
+              docName: fd.bankDocName || '',
+            };
+            const bankProofUrl = bank.docUrl || fd.bankDocUrl || applicant.documents.find(d => d.type === 'bank_details' || d.name.toLowerCase().includes('bank'))?.fileUrl;
 
-              <div className="space-y-3">
-                <h4 className="font-bold text-primary text-sm">Uploaded Documents ({applicant.documents.length})</h4>
-                {applicant.documents.map(doc => (
-                  <div key={doc.id} className="p-3.5 rounded-xl bg-panel border border-line flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-5 h-5 text-indigo-500" />
-                      <div>
-                        <div className="text-primary font-semibold">{doc.name}</div>
-                        <div className="text-[11px] text-tertiary">Uploaded {doc.uploadedAt} • {doc.size}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleViewDoc(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs flex items-center gap-1.5 font-bold border border-[#AF7C28]/30">
-                        <Eye className="w-3.5 h-3.5" /> View
-                      </button>
-                      <button onClick={() => handleDirectDownload(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-panel-2 hover:bg-panel-3 text-primary text-xs flex items-center gap-1.5 font-semibold">
-                        <Download className="w-3.5 h-3.5" /> Download
-                      </button>
+            return (
+              <div className="space-y-5 text-xs">
+                {/* Main Identity & Personal Info */}
+                <div className="grid grid-cols-2 gap-4 p-5 rounded-2xl bg-panel border border-line">
+                  <div><span className="text-tertiary block">Full Name:</span> <span className="text-primary font-bold text-sm">{applicant.fullName}</span></div>
+                  <div><span className="text-tertiary block">Email Address:</span> <span className="text-primary font-medium">{applicant.email}</span></div>
+                  <div><span className="text-tertiary block">Phone Number:</span> <span className="text-primary">{applicant.phone || 'N/A'}</span></div>
+                  
+                  {/* National Insurance */}
+                  <div>
+                    <span className="text-tertiary block">National Insurance No:</span>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="font-mono text-emerald-600 font-bold">{applicant.nationalInsuranceNo || 'N/A'}</span>
+                      {niProofUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewDoc(formatSmartFilename('Proof_of_NI', niProofUrl), niProofUrl)}
+                          className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" /> View NI Proof
+                        </button>
+                      )}
                     </div>
                   </div>
-                ))}
+
+                  {/* SIA Licence */}
+                  <div>
+                    <span className="text-tertiary block">SIA Licence No:</span>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="font-mono text-amber-600 font-bold">{applicant.siaLicenceNo || 'N/A'} ({applicant.siaLicenceSector})</span>
+                      {siaBadgeUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewDoc(formatSmartFilename('Candidate_SIA_Badge', siaBadgeUrl), siaBadgeUrl)}
+                          className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" /> View Badge
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* UK Address & Proofs */}
+                  <div>
+                    <span className="text-tertiary block">UK Address:</span>
+                    <span className="text-primary block">{applicant.address}, {applicant.postcode}</span>
+                    {(addr1Url || addr2Url) && (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[10px] text-tertiary">Proofs:</span>
+                        {addr1Url && (
+                          <button
+                            type="button"
+                            onClick={() => handleViewDoc(formatSmartFilename('Proof_of_Address_1', addr1Url), addr1Url)}
+                            className="text-[10px] font-bold text-[#AF7C28] hover:underline flex items-center gap-0.5"
+                          >
+                            <Eye className="w-2.5 h-2.5" /> Proof 1
+                          </button>
+                        )}
+                        {addr2Url && (
+                          <button
+                            type="button"
+                            onClick={() => handleViewDoc(formatSmartFilename('Proof_of_Address_2', addr2Url), addr2Url)}
+                            className="text-[10px] font-bold text-[#AF7C28] hover:underline flex items-center gap-0.5"
+                          >
+                            <Eye className="w-2.5 h-2.5" /> Proof 2
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Passport Document */}
+                  <div>
+                    <span className="text-tertiary block">Passport / Identity Document:</span>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="text-primary font-medium">{passportUrl ? (applicant.passportDocName || 'Passport on file') : 'Not uploaded'}</span>
+                      {passportUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewDoc(formatSmartFilename('Passport_Copy', passportUrl), passportUrl)}
+                          className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" /> View Passport
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ACT Certificate */}
+                  <div>
+                    <span className="text-tertiary block">ACT Counter-Terrorism Cert:</span>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="text-primary font-medium">{actCertUrl ? (applicant.actCertName || 'ACT Certificate on file') : 'Not uploaded'}</span>
+                      {actCertUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewDoc(formatSmartFilename('ACT_Certificate', actCertUrl), actCertUrl)}
+                          className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" /> View ACT Cert
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bank Details Card (Client Item #7) */}
+                <div className="p-5 rounded-2xl bg-panel border border-line space-y-3">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-line">
+                    <div>
+                      <h4 className="font-bold text-primary text-sm flex items-center gap-2">
+                        Bank Details & Payroll Verification
+                      </h4>
+                      <p className="text-[11px] text-tertiary mt-0.5">BS 7858 verified bank account details for direct deposit wage payments</p>
+                    </div>
+                    {bankProofUrl && (
+                      <button
+                        type="button"
+                        onClick={() => handleViewDoc(formatSmartFilename('Bank_Details_Proof', bankProofUrl), bankProofUrl)}
+                        className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs flex items-center gap-1.5 font-bold border border-[#AF7C28]/30"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> View Bank Proof
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                    <div className="p-3 rounded-xl bg-panel-2 border border-line">
+                      <span className="text-[10px] text-tertiary block font-semibold uppercase">Bank Name</span>
+                      <span className="text-primary font-bold text-xs mt-1 block">{bank.bankName || 'Not provided'}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-panel-2 border border-line">
+                      <span className="text-[10px] text-tertiary block font-semibold uppercase">Account Holder</span>
+                      <span className="text-primary font-bold text-xs mt-1 block">{bank.accountHolderName || applicant.fullName}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-panel-2 border border-line">
+                      <span className="text-[10px] text-tertiary block font-semibold uppercase">Sort Code</span>
+                      <span className="text-primary font-mono font-bold text-xs mt-1 block">{bank.sortCode || 'Not provided'}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-panel-2 border border-line">
+                      <span className="text-[10px] text-tertiary block font-semibold uppercase">Account Number</span>
+                      <span className="text-primary font-mono font-bold text-xs mt-1 block">{bank.accountNumber || 'Not provided'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Company Documents & Onboarding Status (Client Items #9 & #10) */}
+                <div className="p-5 rounded-2xl bg-panel border border-line space-y-3">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-line">
+                    <div>
+                      <h4 className="font-bold text-primary text-sm">Company Documents & Onboarding Status</h4>
+                      <p className="text-[11px] text-tertiary mt-0.5">Admin approval gates candidate access to employment contracts & BS 7858 policies</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {/* Admin Approval Step */}
+                    <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                      applicant.approvedByAdmin
+                        ? 'bg-emerald-500/10 border-emerald-500/30'
+                        : 'bg-amber-500/10 border-amber-500/30'
+                    }`}>
+                      <div>
+                        <span className="font-bold text-primary block text-xs">Step 1: Admin Approval</span>
+                        <span className="text-[11px] text-tertiary">
+                          {applicant.approvedByAdmin
+                            ? `Approved on ${applicant.approvedAt ? new Date(applicant.approvedAt).toLocaleDateString('en-GB') : 'Yes'}`
+                            : 'Pending Admin Review & Document Access Grant'}
+                        </span>
+                      </div>
+                      {!applicant.approvedByAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => approveApplication(applicant.id)}
+                          className="px-3 py-1.5 rounded-lg bg-[#AF7C28] hover:bg-[#c99a3e] text-white text-xs font-bold shadow-sm"
+                        >
+                          Approve Now
+                        </button>
+                      )}
+                      {applicant.approvedByAdmin && (
+                        <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">✓</span>
+                      )}
+                    </div>
+
+                    {/* Candidate Signing Step */}
+                    <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                      applicant.companyDocsSigned || applicant.currentStage === 'hired'
+                        ? 'bg-emerald-500/10 border-emerald-500/30'
+                        : 'bg-panel-2 border-line'
+                    }`}>
+                      <div>
+                        <span className="font-bold text-primary block text-xs">Step 2: Candidate E-Signature</span>
+                        <span className="text-[11px] text-tertiary">
+                          {applicant.companyDocsSigned || applicant.currentStage === 'hired'
+                            ? `Signed by ${applicant.companyDocsSignerName || applicant.fullName} (Hiring Complete)`
+                            : applicant.approvedByAdmin ? 'Awaiting candidate digital signature' : 'Locked until admin approval'}
+                        </span>
+                      </div>
+                      {(applicant.companyDocsSigned || applicant.currentStage === 'hired') ? (
+                        <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">✓</span>
+                      ) : (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-panel text-tertiary border border-line">Pending</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-bold text-primary text-sm">Uploaded Documents ({applicant.documents.length})</h4>
+                  {applicant.documents.map(doc => (
+                    <div key={doc.id} className="p-3.5 rounded-xl bg-panel border border-line flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-5 h-5 text-indigo-500" />
+                        <div>
+                          <div className="text-primary font-semibold">{doc.name}</div>
+                          <div className="text-[11px] text-tertiary">Uploaded {doc.uploadedAt} • {doc.size}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleViewDoc(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs flex items-center gap-1.5 font-bold border border-[#AF7C28]/30">
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </button>
+                        <button onClick={() => handleDirectDownload(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-panel-2 hover:bg-panel-3 text-primary text-xs flex items-center gap-1.5 font-semibold">
+                          <Download className="w-3.5 h-3.5" /> Download
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 3: INTERVIEW INFO */}
           {activeTab === 'interview' && (

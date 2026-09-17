@@ -3,6 +3,7 @@ import { useRecruitment } from '../../context/RecruitmentContext';
 import { ArrowRight, ArrowLeft, CheckCircle2, Plus, Trash2, Upload, ChevronDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { compressEvidence } from '../../lib/compressFile';
+import { BS7858Guidance } from '../common/BS7858Guidance';
 
 const steps = [
   { title: 'Personal Details', sub: 'Who you are' },
@@ -127,6 +128,13 @@ const emptyForm = {
   charRefName: '', charRefAddress: '', charRefPostcode: '', charRefTelephone: '', charRefKnown: '',
   criminalDetails: '', agree1: false, agree2: false, printName: '', signature: '', sigDate: '',
   rtwNationality: 'british', shareCode: '', rtwDocName: '', rtwDocUrl: '',
+  passportDocName: '', passportDocUrl: '',
+  siaBadgeDocName: '', siaBadgeDocUrl: '',
+  actCertDocName: '', actCertDocUrl: '',
+  niProofDocName: '', niProofDocUrl: '',
+  proofAddress1Name: '', proofAddress1Url: '',
+  proofAddress2Name: '', proofAddress2Url: '',
+  bankName: '', accountHolderName: '', sortCode: '', accountNumber: '', bankDocName: '', bankDocUrl: '',
 };
 
 const sampleActivity = (id: number, type: string, title: string, from: string, to: string, mobile: string, email: string): ActivityItem => ({ id, type, title, from, to, evidence: '', mobile, email, file: null });
@@ -152,25 +160,70 @@ export const MultiStepApplyForm: React.FC = () => {
 
   const selectedJob = jobs.find(j => j.id === pendingJobId) || jobs[0];
 
-  const [form, setForm] = useState(emptyForm);
+  const DRAFT_KEY = 'uniguard_apply_form_draft_v1';
 
-  const [activities, setActivities] = useState<ActivityItem[]>([
-    { id: 1, type: 'education', title: '', from: '', to: '', evidence: '', mobile: '', email: '', file: null },
-  ]);
+  const [form, setForm] = useState<typeof emptyForm>(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.form) return { ...emptyForm, ...parsed.form };
+      }
+    } catch {}
+    return emptyForm;
+  });
+
+  const [activities, setActivities] = useState<ActivityItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.activities) && parsed.activities.length > 0) {
+          return parsed.activities;
+        }
+      }
+    } catch {}
+    return [{ id: 1, type: 'education', title: '', from: '', to: '', evidence: '', mobile: '', email: '', file: null }];
+  });
 
   const [picker, setPicker] = useState<{ id: number; field: 'from' | 'to'; year: number; month: number | null } | null>(null);
   const [rtwFile, setRtwFile] = useState<File | null>(null);
-  const [popFlash, setPopFlash] = useState(0);
+  const [passportFile, setPassportFile] = useState<File | null>(null);
+  const [passportDocName, setPassportDocName] = useState('');
+  const [siaBadgeFile, setSiaBadgeFile] = useState<File | null>(null);
+  const [siaBadgeDocName, setSiaBadgeDocName] = useState('');
+  const [actCertFile, setActCertFile] = useState<File | null>(null);
+  const [actCertDocName, setActCertDocName] = useState('');
+  const [niProofFile, setNiProofFile] = useState<File | null>(null);
+  const [niProofDocName, setNiProofDocName] = useState('');
+  const [proofAddress1File, setProofAddress1File] = useState<File | null>(null);
+  const [proofAddress1Name, setProofAddress1Name] = useState('');
+  const [proofAddress2File, setProofAddress2File] = useState<File | null>(null);
+  const [proofAddress2Name, setProofAddress2Name] = useState('');
+  const [bankProofFile, setBankProofFile] = useState<File | null>(null);
+  const [bankProofDocName, setBankProofDocName] = useState('');
   const [evidenceError, setEvidenceError] = useState(false);
   const [activityError, setActivityError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  // Persist form draft in localStorage to safeguard against tab switches or accidental reloads
+  useEffect(() => {
+    try {
+      const serializable = {
+        form,
+        activities: activities.map(a => ({ ...a, file: null })),
+        current,
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(serializable));
+    } catch {}
+  }, [form, activities, current]);
+
   const formatYM = (v: string) => {
     if (!v) return '';
     if (v === 'Present') return 'Present';
     const [y, m, d] = v.split('-');
-    if (d) return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+    if (d && d !== '01') return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
     return m ? `${MONTHS[Number(m) - 1]} ${y}` : y;
   };
 
@@ -186,6 +239,18 @@ export const MultiStepApplyForm: React.FC = () => {
     });
   };
 
+  const isShortPermittedGap = (a: ActivityItem) => {
+    if (a.type !== 'gap') return false;
+    if (!a.from || !a.to) return false;
+    const from = new Date(a.from);
+    const to = a.to === 'Present' ? new Date() : new Date(a.to);
+    if (isNaN(from.getTime()) || isNaN(to.getTime()) || to < from) return false;
+    const diffDays = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    const diffMonths = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+    // Up to 35 calendar days OR 1 calendar month
+    return diffDays <= 35 || (diffMonths <= 1 && diffDays <= 45);
+  };
+
   const coverageYears = () => {
     let months = 0;
     let hasAny = false;
@@ -195,14 +260,15 @@ export const MultiStepApplyForm: React.FC = () => {
       const from = new Date(a.from);
       const to = a.to === 'Present' ? new Date() : new Date(a.to);
       if (isNaN(from.getTime()) || isNaN(to.getTime()) || to < from) return;
-      months += (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+      const m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+      months += Math.max(1, m);
     });
     return { months, hasAny };
   };
 
   const coverageInvalid = () => {
     const { months, hasAny } = coverageYears();
-    return hasAny && months < 60;
+    return hasAny && months < 59;
   };
 
   const update = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
@@ -220,8 +286,10 @@ export const MultiStepApplyForm: React.FC = () => {
   };
 
   const clearForm = () => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
     setForm(emptyForm);
     setActivities([sampleActivity(1, 'education', '', '', '', '', '')]);
+    setCurrent(0);
   };
 
   useEffect(() => {
@@ -230,24 +298,43 @@ export const MultiStepApplyForm: React.FC = () => {
 
   const next = () => {
     if (current === 1) {
-      const { months, hasAny } = coverageYears();
-      const anyFilled = activities.some(a => a.title || a.from || a.to || a.evidence || a.file);
-      if (!anyFilled) {
-        setActivityError('Add at least one activity — fill in the title, From/To dates and evidence.');
-        setPopFlash(f => f + 1);
+      setEvidenceError(false);
+      setActivityError('');
+
+      // Filter activities that have any content filled in
+      const started = activities.filter(a => a.title || a.from || a.to || a.evidence || a.file);
+      if (started.length === 0) {
+        setActivityError('Add at least one activity — fill in details, dates, and evidence.');
         return;
       }
-      const incomplete = activities.find(a => (a.title || a.from || a.to || a.evidence || a.file) && (!a.title || !a.from || !a.to || (!a.evidence && !a.file)));
-      if (incomplete) {
-        setActivityError('Every activity needs a title, From/To dates and evidence.');
-        setEvidenceError(true);
-        setPopFlash(f => f + 1);
+
+      // Check each started activity
+      for (let i = 0; i < started.length; i++) {
+        const a = started[i];
+        const num = i + 1;
+        if (!a.from || !a.to) {
+          setActivityError(`Activity #${num} is missing From or To date. Please select both dates.`);
+          return;
+        }
+        if (!a.title && a.type !== 'gap') {
+          setActivityError(`Activity #${num} is missing Employer, School, or Course details.`);
+          return;
+        }
+        const isPermittedGap = a.type === 'gap' && isShortPermittedGap(a);
+        if (!isPermittedGap && !a.evidence && !a.file) {
+          setActivityError(`Activity #${num} (${a.title || 'Gap over 1 month'}) requires documentary evidence.`);
+          setEvidenceError(true);
+          return;
+        }
+      }
+
+      const { months } = coverageYears();
+      if (months < 59) {
+        setEvidenceError(false);
+        setActivityError(`Your entries currently cover ${(months / 12).toFixed(1)} of 5 years — add more activities or account for any career breaks to reach the 5-year requirement.`);
         return;
       }
-      if (hasAny && months < 60) {
-        setPopFlash(f => f + 1);
-        return;
-      }
+
       setEvidenceError(false);
       setActivityError('');
     }
@@ -284,33 +371,82 @@ export const MultiStepApplyForm: React.FC = () => {
 
       let finalForm = { ...form };
       let extraDocs: any[] = [];
-      if (rtwFile && user) {
-        const compressed = await compressEvidence(rtwFile);
-        const ext = compressed.name.match(/\.[^.]+$/)?.[0] || '.pdf';
-        const path = `${user.id}/rtw-${Date.now()}${ext}`;
-        const { error: upErr } = await supabase.storage.from('evidence').upload(path, compressed, { cacheControl: '3600', upsert: false });
-        if (!upErr) {
-          const { data } = supabase.storage.from('evidence').getPublicUrl(path);
-          finalForm.rtwDocUrl = data.publicUrl;
-          extraDocs.push({
-            id: `doc-rtw-${Date.now()}`,
-            name: `Right_to_Work_Passport${ext}`,
-            type: 'passport',
-            fileUrl: data.publicUrl,
-            uploadedAt: new Date().toISOString().split('T')[0],
-            size: `${(compressed.size / 1024 / 1024).toFixed(1)} MB`
-          });
+
+      const uploadExtraDoc = async (file: File, prefix: string, docType: any, customLabel: string) => {
+        let fileUrl = '';
+        let fileSize = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+        let ext = file.name.match(/\.[^.]+$/)?.[0] || '.jpg';
+        if (user && supabase) {
+          try {
+            const compressed = await compressEvidence(file);
+            ext = compressed.name.match(/\.[^.]+$/)?.[0] || ext;
+            fileSize = `${(compressed.size / 1024 / 1024).toFixed(1)} MB`;
+            const path = `${user.id}/${prefix}-${Date.now()}${ext}`;
+            const { error: upErr } = await supabase.storage.from('evidence').upload(path, compressed, { cacheControl: '3600', upsert: false });
+            if (!upErr) {
+              const { data } = supabase.storage.from('evidence').getPublicUrl(path);
+              fileUrl = data.publicUrl;
+            }
+          } catch {
+            // fallback
+          }
         }
-      } else if (rtwFile) {
-        finalForm.rtwDocUrl = URL.createObjectURL(rtwFile);
+        if (!fileUrl) {
+          fileUrl = URL.createObjectURL(file);
+        }
         extraDocs.push({
-          id: `doc-rtw-${Date.now()}`,
-          name: rtwFile.name,
-          type: 'passport',
-          fileUrl: finalForm.rtwDocUrl,
+          id: `doc-${prefix}-${Date.now()}`,
+          name: `${customLabel}_${file.name}`,
+          type: docType,
+          fileUrl,
           uploadedAt: new Date().toISOString().split('T')[0],
-          size: `${(rtwFile.size / 1024 / 1024).toFixed(1)} MB`
+          size: fileSize,
         });
+        return fileUrl;
+      };
+
+      if (rtwFile) {
+        finalForm.rtwDocUrl = await uploadExtraDoc(rtwFile, 'rtw', 'passport', 'Right_to_Work_Passport');
+        finalForm.rtwDocName = rtwFile.name;
+      }
+      if (passportFile) {
+        finalForm.passportDocUrl = await uploadExtraDoc(passportFile, 'passport', 'passport', 'Passport_Photo_Page');
+        finalForm.passportDocName = passportDocName || passportFile.name;
+      }
+      if (siaBadgeFile) {
+        finalForm.siaBadgeDocUrl = await uploadExtraDoc(siaBadgeFile, 'sia', 'sia_badge', 'SIA_Badge');
+        finalForm.siaBadgeDocName = siaBadgeDocName || siaBadgeFile.name;
+      }
+      if (actCertFile) {
+        finalForm.actCertDocUrl = await uploadExtraDoc(actCertFile, 'act', 'act_certificate', 'ACT_Certificate');
+        finalForm.actCertDocName = actCertDocName || actCertFile.name;
+      }
+      if (niProofFile) {
+        finalForm.niProofDocUrl = await uploadExtraDoc(niProofFile, 'ni', 'proof_ni', 'Proof_of_National_Insurance');
+        finalForm.niProofDocName = niProofDocName || niProofFile.name;
+      }
+      if (proofAddress1File) {
+        finalForm.proofAddress1Url = await uploadExtraDoc(proofAddress1File, 'addr1', 'proof_address', 'Proof_of_Address_1');
+        finalForm.proofAddress1Name = proofAddress1Name || proofAddress1File.name;
+      }
+      if (proofAddress2File) {
+        finalForm.proofAddress2Url = await uploadExtraDoc(proofAddress2File, 'addr2', 'proof_address', 'Proof_of_Address_2');
+        finalForm.proofAddress2Name = proofAddress2Name || proofAddress2File.name;
+      }
+      if (bankProofFile) {
+        finalForm.bankDocUrl = await uploadExtraDoc(bankProofFile, 'bank', 'bank_details', 'Proof_of_Bank_Details');
+        finalForm.bankDocName = bankProofDocName || bankProofFile.name;
+      }
+
+      if (finalForm.bankName || finalForm.accountNumber || finalForm.bankDocUrl) {
+        (finalForm as any).bankDetails = {
+          bankName: finalForm.bankName,
+          accountHolderName: finalForm.accountHolderName || finalForm.fullName,
+          sortCode: finalForm.sortCode,
+          accountNumber: finalForm.accountNumber,
+          docUrl: finalForm.bankDocUrl,
+          docName: finalForm.bankDocName,
+        };
       }
 
       const { error: insertError } = await supabase.from('applications').insert({
@@ -323,6 +459,7 @@ export const MultiStepApplyForm: React.FC = () => {
       });
       if (insertError) throw new Error(`Could not save application: ${insertError.message}`);
 
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong submitting your application.');
@@ -418,6 +555,49 @@ export const MultiStepApplyForm: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-secondary mb-1.5">Date of birth <span style={{ color: '#AF7C28' }}>•</span></label>
                       <input type="date" required value={form.dob} onChange={e => update('dob', e.target.value)} placeholder="mm/dd/yyyy" className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel" />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-secondary mb-1.5">
+                        Copy of Passport <span className="text-faint font-normal">(Photo page / Identity document)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              const f = e.target.files[0];
+                              if (f.size > MAX_EVIDENCE_BYTES) {
+                                showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                return;
+                              }
+                              setPassportFile(f);
+                              setPassportDocName(f.name);
+                              update('passportDocName', f.name);
+                            }
+                          }}
+                        />
+                        <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                          <div className="flex items-center gap-2 truncate">
+                            <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                            <span className={`text-xs truncate ${passportDocName || form.passportDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {passportDocName || form.passportDocName || 'Upload copy of passport (PDF, JPG, PNG)'}
+                            </span>
+                          </div>
+                          {(passportDocName || form.passportDocName) && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setPassportFile(null); setPassportDocName(''); update('passportDocName', ''); }}
+                              className="text-tertiary hover:text-rose-500 text-xs p-1 relative z-20"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-faint">Clear scan or photo of your passport photo page — max 10MB</p>
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-sm font-medium text-secondary mb-1.5">Position applied for <span style={{ color: '#AF7C28' }}>•</span></label>
@@ -517,10 +697,141 @@ export const MultiStepApplyForm: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-secondary mb-1.5">National Insurance number <span style={{ color: '#AF7C28' }}>•</span></label>
                       <input type="text" required value={form.niNumber} onChange={e => update('niNumber', e.target.value)} placeholder="QQ 12 34 56 C" className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel font-mono" />
+                      
+                      {/* Proof of NI Upload */}
+                      <div className="mt-2.5 p-3 rounded-lg border border-line bg-panel-2 space-y-1.5">
+                        <label className="block text-xs font-semibold text-secondary">
+                          Proof of National Insurance <span className="text-faint font-normal">(e.g. HMRC Letter, P45, P60, NI Card)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={e => {
+                              if (e.target.files && e.target.files[0]) {
+                                const f = e.target.files[0];
+                                if (f.size > MAX_EVIDENCE_BYTES) {
+                                  showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                  return;
+                                }
+                                setNiProofFile(f);
+                                setNiProofDocName(f.name);
+                              }
+                            }}
+                          />
+                          <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                            <div className="flex items-center gap-2 truncate">
+                              <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                              <span className={`text-xs truncate ${niProofDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {niProofDocName || 'Upload NI document proof'}
+                              </span>
+                            </div>
+                            {niProofDocName && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); setNiProofFile(null); setNiProofDocName(''); }}
+                                className="text-tertiary hover:text-rose-500 text-xs p-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-faint">PDF, JPG, PNG, WebP or Word — max 10MB</p>
+                      </div>
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-secondary mb-1.5">SIA licence number <span style={{ color: '#AF7C28' }}>•</span></label>
                       <input type="text" required value={form.siaLicence} onChange={e => update('siaLicence', e.target.value)} placeholder="SIA licence number" className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel font-mono" />
+                      
+                      {/* Copy of SIA Badge Upload */}
+                      <div className="mt-2.5 p-3 rounded-lg border border-line bg-panel-2 space-y-1.5">
+                        <label className="block text-xs font-semibold text-secondary">
+                          Copy of SIA Badge <span className="text-faint font-normal">(Front & Back)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={e => {
+                              if (e.target.files && e.target.files[0]) {
+                                const f = e.target.files[0];
+                                if (f.size > MAX_EVIDENCE_BYTES) {
+                                  showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                  return;
+                                }
+                                setSiaBadgeFile(f);
+                                setSiaBadgeDocName(f.name);
+                              }
+                            }}
+                          />
+                          <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                            <div className="flex items-center gap-2 truncate">
+                              <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                              <span className={`text-xs truncate ${siaBadgeDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {siaBadgeDocName || 'Upload copy of SIA badge'}
+                              </span>
+                            </div>
+                            {siaBadgeDocName && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); setSiaBadgeFile(null); setSiaBadgeDocName(''); }}
+                                className="text-tertiary hover:text-rose-500 text-xs p-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-faint">Clear photo or scan of your physical licence card — max 10MB</p>
+                      </div>
+
+                      {/* ACT (Action Counters Terrorism) Certificates Upload */}
+                      <div className="mt-2.5 p-3 rounded-lg border border-line bg-panel-2 space-y-1.5">
+                        <label className="block text-xs font-semibold text-secondary">
+                          ACT Certificates <span className="text-faint font-normal">(Action Counters Terrorism / ACS)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={e => {
+                              if (e.target.files && e.target.files[0]) {
+                                const f = e.target.files[0];
+                                if (f.size > MAX_EVIDENCE_BYTES) {
+                                  showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                  return;
+                                }
+                                setActCertFile(f);
+                                setActCertDocName(f.name);
+                                update('actCertDocName', f.name);
+                              }
+                            }}
+                          />
+                          <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                            <div className="flex items-center gap-2 truncate">
+                              <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                              <span className={`text-xs truncate ${actCertDocName || form.actCertDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {actCertDocName || form.actCertDocName || 'Upload ACT Awareness or ACT Security cert'}
+                              </span>
+                            </div>
+                            {(actCertDocName || form.actCertDocName) && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); setActCertFile(null); setActCertDocName(''); update('actCertDocName', ''); }}
+                                className="text-tertiary hover:text-rose-500 text-xs p-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-faint">ACT Awareness or ACT Security certificate (SIA & ACS approved) — max 10MB</p>
+                      </div>
                     </div>
                   </div>
                 </fieldset>
@@ -574,32 +885,14 @@ export const MultiStepApplyForm: React.FC = () => {
 
             {current === 1 && (
               <div className="space-y-6">
-                {(() => {
-                  const { months, hasAny } = coverageYears();
-                  const ok = months >= 60;
-                  if (!hasAny) return null;
-                  return (
-                    <div key={popFlash} className={`flex items-start justify-between gap-4 p-4 rounded-xl border ${ok && !evidenceError ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}` + (popFlash > 0 && !ok ? ' animate-pop-in' : '')}>
-                      <div>
-                        <p className={`text-sm font-bold ${ok ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {ok ? 'Minimum 5 years covered' : 'At least 5 years of activity needed'}
-                        </p>
-                        <p className={`text-xs mt-0.5 ${ok ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {ok ? 'Your entries cover the 5-year requirement.' : `Your entries currently cover ${(months / 12).toFixed(1)} of 5 years — add more activities or extend the dates.`}
-                        </p>
-                      </div>
-                      <span className={`flex-shrink-0 text-sm font-bold font-mono ${ok ? 'text-emerald-700' : 'text-rose-600'}`}>
-                        {Math.min(Math.round((months / 60) * 100), 100)}%
-                      </span>
-                    </div>
-                  );
-                })()}
+                {/* BS7858 Guidance Manual */}
+                <BS7858Guidance />
 
                 {evidenceError && (
                   <div key="evidence-banner" className="flex items-start gap-3 p-4 rounded-xl border border-rose-200 bg-rose-50 animate-pop-in">
                     <div>
                       <p className="text-sm font-bold text-rose-600">Evidence required</p>
-                      <p className="text-xs text-rose-500 mt-0.5">Upload evidence for every activity before continuing.</p>
+                      <p className="text-xs text-rose-500 mt-0.5">Upload evidence for every activity before continuing (except permitted gaps up to 1 month).</p>
                     </div>
                   </div>
                 )}
@@ -641,19 +934,26 @@ export const MultiStepApplyForm: React.FC = () => {
                           onChange={e => updateActivity(activity.id, 'type', e.target.value)}
                           className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel [&>option]:bg-panel"
                         >
+                          <option value="work">Work (Employment)</option>
                           <option value="education">Education</option>
-                          <option value="work">Work</option>
                           <option value="training">Training / Course</option>
+                          <option value="gap">Career Break / Gap (≤ 1 month permitted without proof)</option>
                           <option value="other">Other</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-secondary mb-1.5">School / employer / course <span style={{ color: '#AF7C28' }}>•</span></label>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">
+                          {activity.type === 'gap' ? 'Reason / Details' : 'School / employer / course'} <span style={{ color: '#AF7C28' }}>•</span>
+                        </label>
                         <input
                           type="text"
                           value={activity.title}
                           onChange={e => updateActivity(activity.id, 'title', e.target.value)}
-                          placeholder={activity.type === 'education' ? 'School / college / university' : activity.type === 'work' ? 'Employer / role' : 'Course / provider'}
+                          placeholder={
+                            activity.type === 'gap' ? 'e.g. Travel, Career Break, Job Seeking' :
+                            activity.type === 'education' ? 'School / college / university' :
+                            activity.type === 'work' ? 'Employer / role' : 'Course / provider'
+                          }
                           className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel"
                         />
                       </div>
@@ -670,11 +970,21 @@ export const MultiStepApplyForm: React.FC = () => {
                           <div className="absolute z-20 mt-2 w-64 rounded-xl border border-line bg-panel shadow-lg p-4">
                             {picker.month ? (
                               <>
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between mb-2">
                                   <button type="button" onClick={() => setPicker({ ...picker, month: null })} className="w-7 h-7 rounded-lg border border-line flex items-center justify-center text-sm text-secondary hover:border-line-strong hover:text-primary transition-colors">‹</button>
                                   <span className="text-sm font-bold text-primary">{MONTHS[picker.month - 1]} {picker.year}</span>
                                   <span className="w-7"></span>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateActivity(activity.id, 'from', `${picker.year}-${String(picker.month).padStart(2, '0')}-01`);
+                                    setPicker(null);
+                                  }}
+                                  className="w-full mb-2.5 py-1 px-2 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors"
+                                >
+                                  Select {MONTHS[picker.month - 1]} {picker.year}
+                                </button>
                                 <div className="grid grid-cols-7 gap-1 mb-1">
                                   {WEEKDAYS.map(d => <span key={d} className="text-center text-[10px] font-semibold text-faint">{d}</span>)}
                                 </div>
@@ -734,11 +1044,21 @@ export const MultiStepApplyForm: React.FC = () => {
                           <div className="absolute z-20 mt-2 w-64 rounded-xl border border-line bg-panel shadow-lg p-4">
                             {picker.month ? (
                               <>
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between mb-2">
                                   <button type="button" onClick={() => setPicker({ ...picker, month: null })} className="w-7 h-7 rounded-lg border border-line flex items-center justify-center text-sm text-secondary hover:border-line-strong hover:text-primary transition-colors">‹</button>
                                   <span className="text-sm font-bold text-primary">{MONTHS[picker.month - 1]} {picker.year}</span>
                                   <span className="w-7"></span>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateActivity(activity.id, 'to', `${picker.year}-${String(picker.month).padStart(2, '0')}-01`);
+                                    setPicker(null);
+                                  }}
+                                  className="w-full mb-2.5 py-1 px-2 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors"
+                                >
+                                  Select {MONTHS[picker.month - 1]} {picker.year}
+                                </button>
                                 <div className="grid grid-cols-7 gap-1 mb-1">
                                   {WEEKDAYS.map(d => <span key={d} className="text-center text-[10px] font-semibold text-faint">{d}</span>)}
                                 </div>
@@ -793,40 +1113,72 @@ export const MultiStepApplyForm: React.FC = () => {
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-secondary mb-1.5">Evidence <span style={{ color: '#AF7C28' }}>•</span></label>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">
+                          Evidence {isShortPermittedGap(activity) ? (
+                            <span className="text-emerald-600 font-semibold text-xs">(Optional — permitted gap ≤ 1 mo)</span>
+                          ) : (
+                            <span style={{ color: '#AF7C28' }}>•</span>
+                          )}
+                        </label>
                         <div className="relative">
                           <input
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                onChange={e => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    const f = e.target.files[0];
-                                    if (!ALLOWED_EVIDENCE_TYPES.includes(f.type)) {
-                                      showToast('File type not allowed', 'Evidence must be a PDF, JPG, PNG, WebP or Word (.doc/.docx) file.', 'error');
-                                      e.target.value = '';
-                                      return;
-                                    }
-                                    if (f.size > MAX_EVIDENCE_BYTES) {
-                                      showToast('File too large', 'Evidence files must be 10 MB or smaller.', 'error');
-                                      e.target.value = '';
-                                      return;
-                                    }
-                                    updateActivity(activity.id, 'evidence', f.name);
-                                    setActivities(prev => prev.map(a => a.id === activity.id ? { ...a, file: f } : a));
-                                    setEvidenceError(false);
-                                  }
-                                }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={e => {
+                              if (e.target.files && e.target.files[0]) {
+                                const f = e.target.files[0];
+                                const ext = '.' + (f.name.split('.').pop() || '').toLowerCase();
+                                const allowedExts = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.doc', '.docx'];
+                                const isValidExt = allowedExts.includes(ext);
+                                const isValidMime = ALLOWED_EVIDENCE_TYPES.includes(f.type) || f.type.startsWith('image/');
+                                if (!isValidExt && !isValidMime) {
+                                  showToast('File type not allowed', 'Evidence must be a PDF, JPG, PNG, WebP or Word (.doc/.docx) file.', 'error');
+                                  e.target.value = '';
+                                  return;
+                                }
+                                if (f.size > MAX_EVIDENCE_BYTES) {
+                                  showToast('File too large', 'Evidence files must be 10 MB or smaller.', 'error');
+                                  e.target.value = '';
+                                  return;
+                                }
+                                setActivities(prev => prev.map(a => a.id === activity.id ? { ...a, evidence: f.name, file: f } : a));
+                                setEvidenceError(false);
+                                setActivityError('');
+                                e.target.value = '';
+                              }
+                            }}
                           />
-                          <div className={`w-full h-[42px] rounded-lg border border-dashed bg-panel-2 flex items-center justify-center gap-2 px-3 cursor-pointer transition-colors ${evidenceError && !activity.evidence ? 'border-rose-300 bg-rose-50' : 'border-line hover:border-line-strong'}`}>
-                            <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-                            <span className={`text-xs truncate ${activity.evidence ? 'font-medium' : 'text-faint'}`} style={activity.evidence ? { color: '#AF7C28' } : {}}>
-                              {activity.evidence || 'Upload document'}
-                            </span>
+                          <div className={`w-full h-[42px] rounded-lg border border-dashed bg-panel-2 flex items-center justify-between px-3 cursor-pointer transition-colors ${evidenceError && !activity.evidence && !isShortPermittedGap(activity) ? 'border-rose-300 bg-rose-50' : 'border-line hover:border-line-strong'}`}>
+                            <div className="flex items-center gap-2 truncate">
+                              <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                              <span className={`text-xs truncate ${activity.evidence ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {activity.evidence || (isShortPermittedGap(activity) ? 'Optional — no proof required' : 'Upload document')}
+                              </span>
+                            </div>
+                            {activity.evidence && (
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setActivities(prev => prev.map(a => a.id === activity.id ? { ...a, evidence: '', file: null } : a));
+                                }}
+                                className="text-tertiary hover:text-rose-500 text-xs p-1 relative z-20"
+                                title="Remove document"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
-                        {evidenceError && !activity.evidence && <p className="mt-1.5 text-[10px] font-medium text-rose-500">Evidence is required for every activity.</p>}
-                        <p className="mt-1.5 text-[10px] text-faint">PDF, JPG, PNG, WebP or Word — max 10MB</p>
+                        {isShortPermittedGap(activity) ? (
+                          <p className="mt-1.5 text-[10px] text-emerald-600 font-medium">✓ BS 7858 Standard: Gaps up to 1 month (31 days) do not require documentary evidence.</p>
+                        ) : (
+                          <>
+                            {evidenceError && !activity.evidence && <p className="mt-1.5 text-[10px] font-medium text-rose-500">Evidence is required for every activity.</p>}
+                            <p className="mt-1.5 text-[10px] text-faint">PDF, JPG, PNG, WebP or Word — max 10MB</p>
+                          </>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-secondary mb-1.5">Contact reference — mobile <span className="text-faint font-normal">(optional)</span></label>
@@ -887,6 +1239,115 @@ export const MultiStepApplyForm: React.FC = () => {
                     <p className="text-sm text-secondary">Since you've been at your current address 5+ years, no previous addresses are needed.</p>
                   </div>
                 )}
+
+                {/* Proofs of Address Upload Section (Mandatory 2 Proofs) */}
+                <fieldset className="border-none p-0 pt-2">
+                  <legend className="text-sm font-bold text-primary uppercase tracking-wider pb-3 border-b border-line w-full mb-3 flex items-center justify-between">
+                    <span>Proof of Address Documents</span>
+                    <span className="text-[10px] normal-case tracking-normal px-2 py-0.5 rounded bg-amber-500/10 text-[#AF7C28] border border-amber-500/30 font-bold">
+                      2 Documents Required
+                    </span>
+                  </legend>
+                  <p className="text-xs text-secondary mb-4 leading-relaxed">
+                    Under BS 7858 security vetting guidelines, please submit two separate proofs of address dated within the last 3 months verifying your current residence.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Proof 1 */}
+                    <div className="p-4 rounded-xl border border-line bg-panel space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-[#AF7C28]/15 text-[#AF7C28] text-xs font-bold flex items-center justify-center font-mono">1</span>
+                        <div>
+                          <label className="text-xs font-bold text-primary block">Proof of Address 1</label>
+                          <span className="text-[10px] text-faint block">Bank statement, credit card, council tax bill</span>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              const f = e.target.files[0];
+                              if (f.size > MAX_EVIDENCE_BYTES) {
+                                showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                return;
+                              }
+                              setProofAddress1File(f);
+                              setProofAddress1Name(f.name);
+                            }
+                          }}
+                        />
+                        <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                          <div className="flex items-center gap-2 truncate">
+                            <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                            <span className={`text-xs truncate ${proofAddress1Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {proofAddress1Name || 'Upload Proof 1'}
+                            </span>
+                          </div>
+                          {proofAddress1Name && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setProofAddress1File(null); setProofAddress1Name(''); }}
+                              className="text-tertiary hover:text-rose-500 text-xs p-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-faint">Dated within the last 3 months — max 10MB</p>
+                    </div>
+
+                    {/* Proof 2 */}
+                    <div className="p-4 rounded-xl border border-line bg-panel space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-[#AF7C28]/15 text-[#AF7C28] text-xs font-bold flex items-center justify-center font-mono">2</span>
+                        <div>
+                          <label className="text-xs font-bold text-primary block">Proof of Address 2</label>
+                          <span className="text-[10px] text-faint block">Utility bill (gas/electric/water), tenancy, HMRC letter</span>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              const f = e.target.files[0];
+                              if (f.size > MAX_EVIDENCE_BYTES) {
+                                showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                return;
+                              }
+                              setProofAddress2File(f);
+                              setProofAddress2Name(f.name);
+                            }
+                          }}
+                        />
+                        <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                          <div className="flex items-center gap-2 truncate">
+                            <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                            <span className={`text-xs truncate ${proofAddress2Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {proofAddress2Name || 'Upload Proof 2'}
+                            </span>
+                          </div>
+                          {proofAddress2Name && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setProofAddress2File(null); setProofAddress2Name(''); }}
+                              className="text-tertiary hover:text-rose-500 text-xs p-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-faint">Different document type from Proof 1 — max 10MB</p>
+                    </div>
+                  </div>
+                </fieldset>
               </div>
             )}
 
@@ -1135,6 +1596,109 @@ export const MultiStepApplyForm: React.FC = () => {
                   <legend className="text-sm font-bold text-primary uppercase tracking-wider pb-3 border-b border-line w-full mb-4">Conditional employment</legend>
                   <div className="p-5 rounded-xl border border-line bg-panel-2">
                     <p className="text-xs text-secondary leading-relaxed">Uniguard may offer a role on a conditional basis while remaining references are verified — this period runs for no longer than 12 weeks. Failing to meet screening standards during that window ends the conditional offer.</p>
+                  </div>
+                </fieldset>
+
+                {/* Bank Details & Payroll Verification (Client Item #7) */}
+                <fieldset className="border-none p-0">
+                  <legend className="text-sm font-bold text-primary uppercase tracking-wider pb-3 border-b border-line w-full mb-4 flex items-center justify-between">
+                    <span>Bank Details & Payroll Verification</span>
+                    <span className="text-[10px] normal-case tracking-normal px-2 py-0.5 rounded bg-amber-500/10 text-[#AF7C28] border border-amber-500/30 font-bold">
+                      Direct Deposit & BS 7858
+                    </span>
+                  </legend>
+                  <p className="text-xs text-secondary mb-4 leading-relaxed">
+                    Provide your UK bank account details for wage payments and BS 7858 identity/financial audit. You may also upload proof of bank account (e.g. bank statement header, voided cheque, or bank app screenshot).
+                  </p>
+                  <div className="p-5 rounded-xl border border-line bg-panel space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">Bank name <span className="text-faint font-normal">(e.g. Barclays, HSBC, Lloyds)</span></label>
+                        <input
+                          type="text"
+                          value={form.bankName}
+                          onChange={e => update('bankName', e.target.value)}
+                          placeholder="e.g. Barclays Bank UK"
+                          className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">Account holder name</label>
+                        <input
+                          type="text"
+                          value={form.accountHolderName || form.fullName}
+                          onChange={e => update('accountHolderName', e.target.value)}
+                          placeholder="Full name as shown on account"
+                          className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">Sort code <span className="text-faint font-normal">(6 digits)</span></label>
+                        <input
+                          type="text"
+                          maxLength={8}
+                          value={form.sortCode}
+                          onChange={e => update('sortCode', e.target.value)}
+                          placeholder="e.g. 20-40-71"
+                          className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel font-mono tracking-wider"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-secondary mb-1.5">Account number <span className="text-faint font-normal">(8 digits)</span></label>
+                        <input
+                          type="text"
+                          maxLength={10}
+                          value={form.accountNumber}
+                          onChange={e => update('accountNumber', e.target.value)}
+                          placeholder="e.g. 12345678"
+                          className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel font-mono tracking-wider"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Proof of Bank Document Upload */}
+                    <div className="pt-2 border-t border-line/60">
+                      <label className="block text-xs font-semibold text-secondary mb-1.5">
+                        Upload Proof of Bank Details <span className="text-faint font-normal">(Statement header, paying-in slip, or voided cheque)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              const f = e.target.files[0];
+                              if (f.size > MAX_EVIDENCE_BYTES) {
+                                showToast('File too large', 'Files must be 10 MB or smaller.', 'error');
+                                return;
+                              }
+                              setBankProofFile(f);
+                              setBankProofDocName(f.name);
+                              update('bankDocName', f.name);
+                            }
+                          }}
+                        />
+                        <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
+                          <div className="flex items-center gap-2 truncate">
+                            <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+                            <span className={`text-xs truncate ${bankProofDocName || form.bankDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {bankProofDocName || form.bankDocName || 'Upload proof of bank details (PDF, JPG, PNG)'}
+                            </span>
+                          </div>
+                          {(bankProofDocName || form.bankDocName) && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setBankProofFile(null); setBankProofDocName(''); update('bankDocName', ''); }}
+                              className="text-tertiary hover:text-rose-500 text-xs p-1 relative z-20"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-faint">Document must show account name, sort code & account number — max 10MB</p>
+                    </div>
                   </div>
                 </fieldset>
               </div>

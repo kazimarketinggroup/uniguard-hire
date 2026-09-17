@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
 import {
   MapPin, ArrowRight, LogOut, FileText, Clock, CheckCircle, MessageSquare, Send,
-  CheckCheck, Check, Calendar, PartyPopper, Inbox, XCircle, Video, Building2, ShieldCheck
+  CheckCheck, Check, Calendar, PartyPopper, Inbox, XCircle, Video, Building2, ShieldCheck,
+  Lock, Unlock, FileCheck, Eye, CheckCircle2, X
 } from 'lucide-react';
 import { STAGE_BADGE, STAGE_LABEL } from '../common/recruitmentStages';
 import type { Applicant } from '../../types/recruitment';
@@ -164,37 +165,345 @@ const InterviewCard: React.FC<{ app: Applicant }> = ({ app }) => {
   );
 };
 
-const CongratsBanner: React.FC<{ app: Applicant }> = ({ app }) => {
-  if (app.currentStage === 'hired') {
-    return (
-      <div className="mt-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200 flex items-center gap-4">
-        <PartyPopper className="w-8 h-8 shrink-0" />
-        <div>
-          <div className="font-bold text-base">Congratulations! You're hired!</div>
-          <div className="text-xs text-white/90 mt-0.5">
-            {app.employeeId ? `Welcome to the Uniguard team! Your employee ID is ${app.employeeId}.` : 'Welcome to the Uniguard team!'}
-            {app.hiredDate && ` Hired on ${app.hiredDate}.`}
+const COMPANY_DOCS = [
+  {
+    id: 'contract',
+    title: 'Employment Contract & Terms of Engagement',
+    badge: 'Legal Contract',
+    desc: 'UK standard SIA security officer terms, £15.50/hr pay rate, site deployment, and conditional probationary terms.',
+    content: `UNIGUARD SECURITY SERVICES UK LTD
+EMPLOYMENT CONTRACT & STATEMENT OF TERMS (BS 7858 & SIA COMPLIANT)
+
+1. THE PARTIES
+This agreement is entered into between Uniguard Security Services UK Ltd (Company No. 09823412, Registered in England & Wales) ("The Employer") and the appointed Security Officer ("The Employee").
+
+2. COMMENCEMENT & PROBATIONARY PERIOD
+Employment commences upon completion of all BS 7858 screening verifications. A probationary period of 12 weeks applies during which conditional employment and reference auditing standards apply.
+
+3. JOB ROLE & DUTIES
+The Employee is engaged as an SIA Licensed Security Officer. Duties encompass static venue guarding, access control, regular perimeter patrols, incident logging, and adhering to customer safety directives.
+
+4. REMUNERATION & PAY RATE
+Base pay rate is £15.50 per hour, payable directly into the Employee's verified UK bank account via direct deposit. Approved overtime or bank holiday shifts are remunerated according to site assignment schedules.
+
+5. BS 7858 & SIA LICENCE COMPLIANCE
+The Employee must maintain an active, valid SIA Licence and display it at all times whilst on duty. The Employee consents to periodic BS 7858 screening audits and criminal/financial re-vetting.
+
+6. CONFIDENTIALITY & SITE SAFETY
+All assignment details, client premises layouts, key codes, and operational directives are strictly confidential and must never be disclosed to third parties.`,
+  },
+  {
+    id: 'handbook',
+    title: 'BS 7858 Staff Handbook & Code of Conduct',
+    badge: 'BS 7858 Standards',
+    desc: 'BS 7858:2019 Security Screening Code of Practice, uniform standards, radio protocol & professional ethics.',
+    content: `UNIGUARD SECURITY SERVICES UK LTD
+BS 7858:2019 SECURITY STAFF HANDBOOK & PROFESSIONAL CODE OF CONDUCT
+
+1. STANDARD OF CONDUCT
+All Uniguard officers represent the front line of security and customer trust. Officers must remain vigilant, courteous, impartial, and punctual on all assignments.
+
+2. UNIFORM & SIA BADGE DISPLAY
+Full approved uniform (security blazer/jacket, tie, dark trousers, and clean footwear) must be worn. Your SIA Licence must be worn in an approved arm-band or lanyard display at all times.
+
+3. BS 7858 VETTING STANDARDS
+Under British Standard BS 7858:2019, any change of residential address, criminal convictions, court summons, or financial judgments must be reported to the compliance department immediately.
+
+4. SUBSTANCE POLICY
+Uniguard operates a strict zero-tolerance drug and alcohol policy. Random screenings may be performed in accordance with site regulations and client requirements.
+
+5. INCIDENT LOGGING & ESCALATION
+All security breaches, suspicious activity, or health & safety hazards must be recorded in the site Daily Occurrence Book (DOB) and escalated to Uniguard 24/7 Control.`,
+  },
+  {
+    id: 'safety',
+    title: 'Health, Safety & Lone Worker Assignment Policy',
+    badge: 'Safety & Operations',
+    desc: 'Emergency response, lone-worker hourly check-in intervals, risk escalation & first aid guidance.',
+    content: `UNIGUARD SECURITY SERVICES UK LTD
+HEALTH, SAFETY, LONE WORKING & OPERATIONAL ASSIGNMENT POLICY
+
+1. LONE WORKER CHECK-INS
+Where an officer is stationed on a lone-worker assignment, hourly check-in calls to the 24/7 Control Room are mandatory. Failure to check in triggers automated welfare escalation.
+
+2. EMERGENCY ESCALATION & 999
+In circumstances involving imminent violence, weapons, fire, or acute medical emergencies, immediately contact emergency services (999) before notifying Uniguard Control.
+
+3. DYNAMIC RISK ASSESSMENT
+Prior to commencing any patrol or intervening in a disturbance, officers must assess risks to their personal safety. Never place yourself or the public in avoidable physical hazard.
+
+4. ACCIDENT & NEAR MISS REPORTING
+Every incident or near miss occurring on site must be reported within 2 hours to Uniguard Operations using the standard incident report form.`,
+  },
+];
+
+const CompanyDocumentsSection: React.FC<{ app: Applicant }> = ({ app }) => {
+  const { completeHiring, showToast } = useRecruitment();
+  const [readingDoc, setReadingDoc] = useState<typeof COMPANY_DOCS[0] | null>(null);
+  const [agreeContract, setAgreeContract] = useState(false);
+  const [agreeHandbook, setAgreeHandbook] = useState(false);
+  const [agreeSafety, setAgreeSafety] = useState(false);
+  const [signerName, setSignerName] = useState(app.fullName || '');
+  const [signing, setSigning] = useState(false);
+
+  const isHired = app.currentStage === 'hired' || app.companyDocsSigned;
+  const isApproved = app.approvedByAdmin || app.currentStage === 'contract_sent' || app.currentStage === 'ready_for_contract';
+
+  const handleSignAndComplete = async () => {
+    if (!agreeContract || !agreeHandbook || !agreeSafety) {
+      showToast('Agreement Required', 'Please check all 3 agreement boxes before signing.', 'error');
+      return;
+    }
+    if (!signerName.trim()) {
+      showToast('Signature Required', 'Please enter your printed legal name to sign.', 'error');
+      return;
+    }
+    setSigning(true);
+    try {
+      completeHiring(app.id, signerName.trim());
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 space-y-4">
+      {/* 1. STATE: HIRING COMPLETE */}
+      {isHired && (
+        <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-600/20 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0">
+                <PartyPopper className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-lg text-white">Hiring Complete ✓</h3>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white/25 text-white">
+                    ACTIVE OFFICER
+                  </span>
+                </div>
+                <p className="text-xs text-white/90 mt-0.5">
+                  All company documents and onboarding requirements have been completed and signed.
+                </p>
+              </div>
+            </div>
+
+            {app.employeeId && (
+              <div className="text-right shrink-0 bg-white/15 px-3 py-1.5 rounded-xl border border-white/20">
+                <span className="text-[10px] font-medium text-white/80 block uppercase tracking-wider">Employee ID</span>
+                <span className="font-mono font-extrabold text-sm text-white">{app.employeeId}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-black/20 text-xs text-white/90 space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Digitally Signed By:</span>
+              <strong className="text-white font-mono">{app.companyDocsSignerName || app.fullName}</strong>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Signed Date:</span>
+              <span className="text-white/80">{app.companyDocsSignedAt ? new Date(app.companyDocsSignedAt).toLocaleDateString('en-GB') : app.hiredDate || 'Confirmed'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Assigned Role:</span>
+              <span className="text-white font-semibold">{app.appliedJobTitle}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            {COMPANY_DOCS.map(doc => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={() => setReadingDoc(doc)}
+                className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <FileCheck className="w-3.5 h-3.5" /> {doc.badge}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-    );
-  }
-  if (app.currentStage === 'contract_sent' || app.currentStage === 'ready_for_contract') {
-    return (
-      <div className="mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center gap-3">
-        <Inbox className="w-5 h-5 text-emerald-600 shrink-0" />
-        <div>
-          <div className="text-sm font-bold text-emerald-800">Contract {app.currentStage === 'contract_sent' ? 'sent to you' : 'on its way'}</div>
-          <div className="text-xs text-emerald-700/80">
-            {app.currentStage === 'contract_sent'
-              ? "Check your email for your employment contract. Once signed, you're officially hired!"
-              : 'Your vetting checks passed. Our team is preparing your employment contract.'}
+      )}
+
+      {/* 2. STATE: LOCKED (AWAITING ADMIN APPROVAL) */}
+      {!isHired && !isApproved && (
+        <div className="p-5 rounded-2xl border-2 border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-amber-500/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-700">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-primary">Company Onboarding Documents & Policies</h4>
+                <p className="text-[11px] text-tertiary">Employment contract, BS 7858 staff handbook, and operational safety pack</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-800 border border-amber-500/30 flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Pending Admin Approval
+            </span>
+          </div>
+
+          <p className="text-xs text-secondary leading-relaxed bg-white/60 p-3 rounded-xl border border-line">
+            Under BS 7858 security vetting guidelines, official company documents and your formal employment contract will be unlocked once an administrator reviews and approves your application. You will be notified instantly when access is granted.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 opacity-60">
+            {COMPANY_DOCS.map(doc => (
+              <div key={doc.id} className="p-2.5 rounded-xl bg-panel border border-dashed border-line text-xs flex items-center gap-2 text-tertiary">
+                <Lock className="w-3.5 h-3.5 text-faint shrink-0" />
+                <span className="truncate">{doc.title}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-    );
-  }
-  return null;
+      )}
+
+      {/* 3. STATE: UNLOCKED (ADMIN APPROVED — OFFICER REVIEWS & SIGNS) */}
+      {!isHired && isApproved && (
+        <div className="p-6 rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 to-teal-500/10 shadow-sm space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-700 shrink-0">
+                <Unlock className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-base text-primary">Company Documents & Onboarding</h4>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 border border-emerald-500/40">
+                    Action Required
+                  </span>
+                </div>
+                <p className="text-xs text-secondary mt-0.5">
+                  An administrator has approved your application! Review the 3 documents below, confirm agreement, and sign to complete hiring.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 3 Document Cards with Preview */}
+          <div className="space-y-2.5">
+            {COMPANY_DOCS.map(doc => (
+              <div key={doc.id} className="p-3.5 rounded-xl bg-white border border-line flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="w-5 h-5 text-[#AF7C28] shrink-0" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-primary text-xs truncate">{doc.title}</span>
+                      <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-panel-2 border border-line text-tertiary">{doc.badge}</span>
+                    </div>
+                    <p className="text-[11px] text-tertiary truncate mt-0.5">{doc.desc}</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setReadingDoc(doc)}
+                  className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs font-bold border border-[#AF7C28]/30 flex items-center gap-1.5 shrink-0 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Read & Review
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* E-Signing Form */}
+          <div className="p-4 rounded-xl bg-white border border-line space-y-4">
+            <h5 className="text-xs font-bold text-primary uppercase tracking-wider">Candidate Confirmation & E-Signature</h5>
+            
+            <div className="space-y-2.5 text-xs text-secondary">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreeContract}
+                  onChange={e => setAgreeContract(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
+                />
+                <span>I have read, understood, and accept the Uniguard Security Employment Contract & Terms of Engagement.</span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreeHandbook}
+                  onChange={e => setAgreeHandbook(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
+                />
+                <span>I acknowledge and agree to comply with BS 7858 security vetting standards and the Staff Code of Conduct.</span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreeSafety}
+                  onChange={e => setAgreeSafety(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
+                />
+                <span>I agree to all Health, Safety, Lone Worker Check-In, and Operational Assignment procedures.</span>
+              </label>
+            </div>
+
+            <div className="pt-3 border-t border-line grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">
+                  Full Legal Name (Digital Signature) <span className="text-emerald-600">•</span>
+                </label>
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={e => setSignerName(e.target.value)}
+                  placeholder="Enter full legal name"
+                  className="w-full px-3.5 py-2 rounded-lg border border-line text-sm font-semibold text-primary bg-panel focus:outline-none focus:border-line-strong"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignAndComplete}
+                disabled={!agreeContract || !agreeHandbook || !agreeSafety || !signerName.trim() || signing}
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {signing ? 'Signing Documents…' : 'Sign All Documents & Complete Hiring'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {readingDoc && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setReadingDoc(null)}>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-line flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="p-5 border-b border-line bg-panel-2 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#AF7C28]">{readingDoc.badge}</span>
+                <h3 className="text-base font-bold text-primary">{readingDoc.title}</h3>
+              </div>
+              <button
+                onClick={() => setReadingDoc(null)}
+                className="p-1.5 rounded-lg border border-line text-secondary hover:text-primary transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4 text-xs leading-relaxed text-secondary font-mono bg-[#faf8f5]">
+              <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-secondary">{readingDoc.content}</pre>
+            </div>
+            <div className="p-4 border-t border-line bg-panel flex items-center justify-end">
+              <button
+                onClick={() => setReadingDoc(null)}
+                className="px-4 py-2 rounded-xl bg-[#AF7C28] text-white text-xs font-bold"
+              >
+                Close Document
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const UserChat: React.FC<{ app: Applicant; apps: Applicant[] }> = ({ app, apps }) => {
@@ -508,7 +817,7 @@ export const UserDashboard: React.FC = () => {
 
                     <StageFlow app={app} />
                     <InterviewCard app={app} />
-                    <CongratsBanner app={app} />
+                    <CompanyDocumentsSection app={app} />
 
                     <button
                       onClick={() => setTab('chat')}

@@ -44,7 +44,7 @@ export const STAGE_LABEL: Record<string, string> = {
   vetting_in_progress: 'Vetting in Progress',
   ready_for_contract: 'Ready for Contract',
   contract_sent: 'Contract Sent',
-  hired: 'Hired',
+  hired: 'Hiring Complete',
   rejected: 'Rejected'
 };
 

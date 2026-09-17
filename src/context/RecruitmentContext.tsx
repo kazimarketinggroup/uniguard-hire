@@ -73,6 +73,8 @@ interface RecruitmentContextType {
   scheduleInterview: (applicantId: string, interview: Omit<InterviewInfo, 'id'>) => void;
   completeInterview: (applicantId: string, notes: string, rating: number, passed: boolean) => void;
   sendContract: (applicantId: string) => void;
+  approveApplication: (applicantId: string) => void;
+  completeHiring: (applicantId: string, signerName: string) => void;
   convertToEmployee: (applicantId: string) => void;
   fireEmployee: (applicantId: string) => void;
   createJob: (jobData: Omit<Job, 'id' | 'createdDate' | 'applicantsCount'>) => Promise<void>;
@@ -289,6 +291,23 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       rtwNationality: fd.rtwNationality || (fd.shareCode ? 'non_british' : 'british'),
       shareCode: fd.shareCode || '',
       rtwDocUrl: fd.rtwDocUrl || '',
+      passportDocName: fd.passportDocName || fd.rtwDocName,
+      passportDocUrl: fd.passportDocUrl || fd.rtwDocUrl,
+      bankDetails: fd.bankDetails || (fd.bankName ? {
+        bankName: fd.bankName,
+        accountHolderName: fd.accountHolderName || row.full_name || '',
+        sortCode: fd.sortCode || '',
+        accountNumber: fd.accountNumber || '',
+        docUrl: fd.bankDocUrl,
+        docName: fd.bankDocName,
+      } : undefined),
+      actCertName: fd.actCertName || fd.actCertDocName,
+      actCertUrl: fd.actCertUrl || fd.actCertDocUrl,
+      approvedByAdmin: !!fd.approvedByAdmin || row.status === 'ready_for_contract' || row.status === 'contract_sent' || row.status === 'hired',
+      approvedAt: fd.approvedAt,
+      companyDocsSigned: !!fd.companyDocsSigned || row.status === 'hired',
+      companyDocsSignedAt: fd.companyDocsSignedAt,
+      companyDocsSignerName: fd.companyDocsSignerName,
       documents: docs,
       vettingChecks: storedChecks
         ? (storedChecks as any[]).map((c, i) => ({
@@ -961,11 +980,12 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return;
       }
-      // Fresh sign-in → dashboard, unless we're mid-email-confirmation or
-      // mid-password-reset, where the session is only the recovery OTP session.
+      // Only redirect on fresh sign-in if the user is explicitly on an auth entry page
+      // (/login, /signup, /admin-login). Never interrupt an applicant on /apply or mid-form!
       if (event === 'SIGNED_IN' && session?.user) {
         const path = window.location.pathname;
-        if (path !== '/confirm' && !isRecovery()) {
+        const isAuthEntryPage = path === '/login' || path === '/signup' || path === '/admin-login';
+        if (isAuthEntryPage && !isRecovery()) {
           setActivePage(isAdmin ? 'dashboard' : 'user-dashboard');
         }
       }
@@ -1437,6 +1457,79 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     showToast('Contract Dispatched 📄', 'Employment contract sent to applicant via e-signature link.', 'success');
   };
 
+  // 5b. Approve Application & Grant Document Access
+  const approveApplication = (applicantId: string) => {
+    const isDbRow = supabaseIdsRef.current.has(applicantId);
+    const now = new Date().toISOString();
+
+    setApplicants(prev => prev.map(applicant => {
+      if (applicant.id !== applicantId) return applicant;
+      logActivity(applicant.id, applicant.fullName, 'Application approved by Admin. Granted officer access to company onboarding documents.');
+      return {
+        ...applicant,
+        approvedByAdmin: true,
+        approvedAt: now,
+        currentStage: 'contract_sent',
+      };
+    }));
+
+    if (isDbRow && supabase) {
+      lastSyncedStatusRef.current[applicantId] = 'contract_sent';
+      const targetApp = applicants.find(a => a.id === applicantId);
+      const fd = (targetApp as any)?._rawFormData || {};
+      supabase.from('applications').update({
+        status: 'contract_sent',
+        form_data: {
+          ...fd,
+          approvedByAdmin: true,
+          approvedAt: now,
+        }
+      }).eq('id', applicantId).then(({ error }) => {
+        if (error) delete lastSyncedStatusRef.current[applicantId];
+      });
+    }
+
+    showToast('Application Approved ✓', 'Officer granted access to company documents and induction pack.', 'success');
+  };
+
+  // 5c. Complete Hiring once all sections and company documents are signed
+  const completeHiring = (applicantId: string, signerName: string) => {
+    const isDbRow = supabaseIdsRef.current.has(applicantId);
+    const now = new Date().toISOString();
+
+    setApplicants(prev => prev.map(applicant => {
+      if (applicant.id !== applicantId) return applicant;
+      logActivity(applicant.id, applicant.fullName, `All company documents and onboarding signed by ${signerName}. Hiring Complete!`);
+      return {
+        ...applicant,
+        companyDocsSigned: true,
+        companyDocsSignedAt: now,
+        companyDocsSignerName: signerName,
+        currentStage: 'hired',
+      };
+    }));
+
+    if (isDbRow && supabase) {
+      lastSyncedStatusRef.current[applicantId] = 'hired';
+      const targetApp = applicants.find(a => a.id === applicantId);
+      const fd = (targetApp as any)?._rawFormData || {};
+      supabase.from('applications').update({
+        status: 'hired',
+        form_data: {
+          ...fd,
+          companyDocsSigned: true,
+          companyDocsSignedAt: now,
+          companyDocsSignerName: signerName,
+        }
+      }).eq('id', applicantId).then(({ error }) => {
+        if (error) delete lastSyncedStatusRef.current[applicantId];
+      });
+    }
+
+    convertToEmployee(applicantId);
+    showToast('Hiring Complete! 🎉', 'All documents signed. Candidate added to company roster.', 'success');
+  };
+
   // 6. Convert to Employee (Hire!) — guarded so the same applicant can never
   // be hired twice, even with a double click or a stale UI
   const convertToEmployee = (applicantId: string) => {
@@ -1768,6 +1861,8 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       scheduleInterview,
       completeInterview,
       sendContract,
+      approveApplication,
+      completeHiring,
       convertToEmployee,
       fireEmployee,
       createJob,
