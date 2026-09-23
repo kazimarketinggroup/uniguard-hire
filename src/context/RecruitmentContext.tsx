@@ -113,7 +113,6 @@ interface RecruitmentContextType {
   isAuditor: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   auditorLogin: (email: string, password: string) => Promise<boolean>;
-  auditorDemoLogin: () => void;
   logout: () => void;
 
   // Public user auth
@@ -1115,7 +1114,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       const { data: profile } = await client.from('profiles').select('is_admin, is_auditor').eq('id', supabaseUser.id).maybeSingle();
       const isAdmin = !!profile?.is_admin;
-      const isAuditorUser = !!profile?.is_auditor || (supabaseUser.email || '').toLowerCase().includes('auditor') || (supabaseUser.email || '').toLowerCase().includes('superadmin');
+      const isAuditorUser = !!profile?.is_auditor;
       if (isAdmin) {
         setIsAuthenticated(true);
         setUserRole('admin');
@@ -1293,10 +1292,6 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Admin auth: a signed-in Supabase user flagged is_admin = true in public.profiles
   const login = async (email: string, password: string): Promise<boolean> => {
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail === 'auditor@uniguard.co.uk' || cleanEmail.includes('auditor')) {
-      return auditorLogin(email, password);
-    }
     if (!supabase) {
       showToast('Login Failed', 'Backend is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', 'error');
       return false;
@@ -1314,7 +1309,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setActivePage('dashboard');
       showToast('Admin Logged In', 'Welcome to the admin dashboard.', 'success');
       return true;
-    } else if (profile?.is_auditor || cleanEmail.includes('auditor')) {
+    } else if (profile?.is_auditor) {
       setIsAuthenticated(true);
       setUserRole('auditor');
       localStorage.setItem('uniguard_user_role', 'auditor');
@@ -1328,31 +1323,19 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const auditorLogin = async (email: string, password: string): Promise<boolean> => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    // 1. If Supabase is active, attempt official signInWithPassword (e.g. from 017 migration)
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (!error && data.user) {
-          setIsAuthenticated(true);
-          setUserRole('auditor');
-          localStorage.setItem('uniguard_user_role', 'auditor');
-          setSelectedStageFilter('all');
-          setSearchQuery('');
-          setActivePage('applicants');
-          showToast('Super Admin Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
-          syncAll();
-          return true;
-        }
-      } catch {}
+    // Super Admin authentication — Supabase-only, no fallbacks, no hardcoded credentials
+    if (!supabase) {
+      showToast('Login Failed', 'Backend is not configured.', 'error');
+      return false;
     }
-
-    // 2. Fallback credentials verification
-    if (
-      (cleanEmail === 'superadmin@uniguard.co.uk' || cleanEmail === 'auditor@uniguard.co.uk') &&
-      (password === 'SuperAdminSecure2026!' || password === 'AuditorPass2026!' || password.length >= 6)
-    ) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) {
+      showToast('Login Failed', 'Invalid email or password.', 'error');
+      return false;
+    }
+    // Verify Super Admin role from database — not from email patterns
+    const { data: profile } = await supabase.from('profiles').select('is_admin, is_auditor').eq('id', data.user.id).maybeSingle();
+    if (profile?.is_auditor) {
       setIsAuthenticated(true);
       setUserRole('auditor');
       localStorage.setItem('uniguard_user_role', 'auditor');
@@ -1360,49 +1343,12 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setSearchQuery('');
       setActivePage('applicants');
       showToast('Super Admin Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
-      // Load cached admin applications or rich initial applicants
-      setApplicants(prev => {
-        if (prev.length > 0) return prev;
-        const cached = localStorage.getItem('uniguard_cached_applications');
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(supabaseRowToApplicant);
-          } catch {}
-        }
-        return INITIAL_APPLICANTS;
-      });
       syncAll();
       return true;
     }
-
-    showToast('Login Failed', 'Invalid credentials for Super Admin portal.', 'error');
+    showToast('Access Denied', 'This account does not have Super Admin access.', 'error');
+    await supabase.auth.signOut();
     return false;
-  };
-
-  const auditorDemoLogin = () => {
-    setIsAuthenticated(true);
-    setUserRole('auditor');
-    localStorage.setItem('uniguard_user_role', 'auditor');
-    setSelectedStageFilter('all');
-    setSearchQuery('');
-    setActivePage('applicants');
-    // Load cached admin applications or rich initial applicants
-    setApplicants(prev => {
-      if (prev.length > 0) return prev;
-      const cached = localStorage.getItem('uniguard_cached_applications');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(supabaseRowToApplicant);
-        } catch {}
-      }
-      return INITIAL_APPLICANTS;
-    });
-    setJobs(prev => prev.length > 0 ? prev : INITIAL_JOBS);
-    setEmployees(prev => prev.length > 0 ? prev : INITIAL_EMPLOYEES);
-    showToast('Auditor Mode Active', 'Signed in as Compliance Auditor (Read-Only Mode).', 'info');
-    syncAll();
   };
 
   const logout = () => {
@@ -2242,7 +2188,6 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       isAuditor,
       login,
       auditorLogin,
-      auditorDemoLogin,
       logout,
       publicUser,
       authLoading,
