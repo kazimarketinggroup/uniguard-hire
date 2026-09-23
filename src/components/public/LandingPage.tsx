@@ -177,7 +177,7 @@ export const LandingPage: React.FC = () => {
       {/* Footer */}
       <footer className="bg-panel border-t border-line pt-14 pb-8">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-line">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 pb-12 border-b border-line">
             {/* Column 1: Company Brand */}
             <div className="space-y-4">
               <button onClick={() => setActivePage('landing')} className="flex flex-col items-start cursor-pointer">
@@ -216,34 +216,7 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Column 3: Quick Links */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Candidate Portal</h3>
-              <ul className="space-y-2 text-xs text-secondary">
-                <li>
-                  <button onClick={() => setActivePage('signup')} className="hover:text-primary transition-colors">
-                    Apply for Security Jobs
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActivePage(publicUser ? 'user-dashboard' : 'login')} className="hover:text-primary transition-colors">
-                    Candidate Dashboard
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActivePage('login')} className="hover:text-primary transition-colors">
-                    Sign In with Google
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActivePage('auditor-login')} className="hover:text-primary transition-colors">
-                    Auditor & Staff Access
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            {/* Column 4: Legal & Policies */}
+            {/* Column 3: Legal & Policies */}
             <div className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Legal & Compliance</h3>
               <ul className="space-y-2 text-xs text-secondary">
@@ -275,9 +248,6 @@ export const LandingPage: React.FC = () => {
               </button>
               <button onClick={() => setActivePage('terms')} className="hover:text-primary transition-colors">
                 Terms of Service
-              </button>
-              <button onClick={() => setActivePage('auditor-login')} className="hover:text-primary transition-colors">
-                Admin
               </button>
             </div>
           </div>
