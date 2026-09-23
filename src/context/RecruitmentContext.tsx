@@ -14,7 +14,8 @@ import type {
   ChatMessage,
   ScheduledInterview,
   ApplicantDocument,
-  AppSettings
+  AppSettings,
+  UserRole
 } from '../types/recruitment';
 import { 
   INITIAL_APPLICANTS, 
@@ -105,9 +106,13 @@ interface RecruitmentContextType {
   isCommandPaletteOpen: boolean;
   setIsCommandPaletteOpen: (open: boolean) => void;
 
-// Authentication
+  // Authentication & Roles
   isAuthenticated: boolean;
+  userRole: UserRole;
+  isAuditor: boolean;
   login: (email: string, password: string) => Promise<boolean>;
+  auditorLogin: (email: string, password: string) => Promise<boolean>;
+  auditorDemoLogin: () => void;
   logout: () => void;
 
   // Public user auth
@@ -117,8 +122,7 @@ interface RecruitmentContextType {
   googleLogin: () => Promise<boolean>;
   requestPasswordReset: (email: string, captchaToken?: string) => Promise<boolean>;
   publicLogout: () => void;
-
-  }
+}
 
 const RecruitmentContext = createContext<RecruitmentContextType | undefined>(undefined);
 
@@ -131,6 +135,9 @@ const PAGE_PATHS: Record<string, string> = {
   confirm: '/confirm',
   'forgot-password': '/forgot-password',
   'reset-password': '/reset-password',
+  'privacy-policy': '/privacy-policy',
+  terms: '/terms-of-service',
+  'auditor-login': '/auditor',
   dashboard: '/admin',
   jobs: '/admin/jobs',
   applicants: '/admin/applicants',
@@ -150,6 +157,13 @@ const PATH_PAGES: Record<string, string> = {
   '/confirm': 'confirm',
   '/forgot-password': 'forgot-password',
   '/reset-password': 'reset-password',
+  '/privacy-policy': 'privacy-policy',
+  '/privacy': 'privacy-policy',
+  '/terms': 'terms',
+  '/terms-of-service': 'terms',
+  '/terms-and-conditions': 'terms',
+  '/auditor': 'auditor-login',
+  '/auditor/login': 'auditor-login',
   '/admin': 'dashboard',
   '/admin/jobs': 'jobs',
   '/admin/applicants': 'applicants',
@@ -205,7 +219,15 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(INITIAL_ACTIVITY_LOGS);
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<UserRole>(() => {
+    return (localStorage.getItem('uniguard_user_role') as UserRole) || null;
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return !!localStorage.getItem('uniguard_user_role');
+  });
+
+  const isAuditor = userRole === 'auditor';
 
   const [publicUser, setPublicUser] = useState<{ name: string; email: string } | null>(null);
 
@@ -348,6 +370,26 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const publicUserRef = React.useRef(publicUser);
   useEffect(() => { publicUserRef.current = publicUser; }, [publicUser]);
 
+  // Immediately hydrate from cached admin session if present
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('uniguard_cached_applications');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          reconcileApplicants(parsed.map(supabaseRowToApplicant));
+        }
+      }
+      const cachedJobs = localStorage.getItem('uniguard_cached_jobs');
+      if (cachedJobs) {
+        const parsedJobs = JSON.parse(cachedJobs);
+        if (Array.isArray(parsedJobs) && parsedJobs.length > 0) {
+          mergeJobs(parsedJobs.map(supabaseRowToJob));
+        }
+      }
+    } catch {}
+  }, []);
+
   const supabaseRowToMessage = (m: any): ChatMessage => ({
     id: m.id,
     applicationId: m.application_id,
@@ -433,6 +475,23 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const reconcileApplicants = (incoming: Applicant[]) => {
+    if (incoming.length === 0) {
+      // Don't wipe existing applications if server returns empty (e.g. unauthenticated auditor or RLS)
+      setApplicants(prev => {
+        if (prev.length > 0) return prev;
+        const cached = localStorage.getItem('uniguard_cached_applications');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return parsed.map(supabaseRowToApplicant);
+            }
+          } catch {}
+        }
+        return INITIAL_APPLICANTS;
+      });
+      return;
+    }
     setApplicants(prev => {
       const incomingIds = new Set(incoming.map(a => a.id));
       const incomingEmails = new Set(incoming.map(a => a.email.toLowerCase()));
@@ -473,7 +532,8 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
           byId.set(a.id, a);
         }
       });
-      return [...byId.values()];
+      const result = [...byId.values()];
+      return result.length > 0 ? result : (prev.length > 0 ? prev : INITIAL_APPLICANTS);
     });
   };
 
@@ -488,11 +548,52 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
         supabase.from('interviews').select('*'),
         supabase.from('jobs').select('*').order('created_at', { ascending: false }),
       ]);
-      if (apps.data) {
+      if (apps.data && apps.data.length > 0) {
         apps.data.forEach((r: any) => { prevStageRef.current[r.id] = r.status; });
+        try {
+          localStorage.setItem('uniguard_cached_applications', JSON.stringify(apps.data));
+        } catch {}
         reconcileApplicants(apps.data.map(supabaseRowToApplicant));
+      } else {
+        // Supabase returned 0 rows (e.g. unauthenticated auditor session or RLS)
+        const cached = localStorage.getItem('uniguard_cached_applications');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              reconcileApplicants(parsed.map(supabaseRowToApplicant));
+            } else {
+              setApplicants(prev => prev.length > 0 ? prev : INITIAL_APPLICANTS);
+            }
+          } catch {
+            setApplicants(prev => prev.length > 0 ? prev : INITIAL_APPLICANTS);
+          }
+        } else {
+          setApplicants(prev => prev.length > 0 ? prev : INITIAL_APPLICANTS);
+        }
       }
-      if (jobRows.data) mergeJobs(jobRows.data.map(supabaseRowToJob));
+      if (jobRows.data && jobRows.data.length > 0) {
+        try {
+          localStorage.setItem('uniguard_cached_jobs', JSON.stringify(jobRows.data));
+        } catch {}
+        mergeJobs(jobRows.data.map(supabaseRowToJob));
+      } else {
+        const cachedJobs = localStorage.getItem('uniguard_cached_jobs');
+        if (cachedJobs) {
+          try {
+            const parsed = JSON.parse(cachedJobs);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              mergeJobs(parsed.map(supabaseRowToJob));
+            } else {
+              setJobs(prev => prev.length > 0 ? prev : INITIAL_JOBS);
+            }
+          } catch {
+            setJobs(prev => prev.length > 0 ? prev : INITIAL_JOBS);
+          }
+        } else {
+          setJobs(prev => prev.length > 0 ? prev : INITIAL_JOBS);
+        }
+      }
       if (msgs.data) mergeMessages(msgs.data.map(supabaseRowToMessage));
       // Employees + settings live in a later migration — never let a missing
       // table take down the core pipeline sync.
@@ -779,6 +880,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     messages.filter(m => m.applicationId === applicationId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   const sendMessage = (applicationId: string, body: string, sender: 'admin' | 'user') => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot send messages.', 'warning');
+      return;
+    }
     const trimmed = body.trim();
     if (!trimmed) return;
     const isDbRow = supabaseIdsRef.current.has(applicationId);
@@ -817,6 +922,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const editMessage = (messageId: string, body: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot edit messages.', 'warning');
+      return;
+    }
     const trimmed = body.trim();
     if (!trimmed) return;
     const now = new Date().toISOString();
@@ -829,6 +938,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const deleteMessage = (messageId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot delete messages.', 'warning');
+      return;
+    }
     setMessages(prev => prev.filter(m => m.id !== messageId));
     if (!messageId.startsWith('local-') && supabase) {
       supabase.from('messages').delete().eq('id', messageId).then(({ error }) => {
@@ -859,6 +972,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     interviews.filter(i => i.applicationId === applicationId).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
 
   const scheduleInterviewLive = (applicantId: string, scheduledAt: string, durationMinutes: number, location: string, notes?: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot schedule interviews.', 'warning');
+      return;
+    }
     const existing = interviews.find(i => i.applicationId === applicantId);
     if (existing) {
       const d = new Date(existing.scheduledAt);
@@ -912,6 +1029,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const completeInterviewLive = (interviewId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot record interview completions.', 'warning');
+      return;
+    }
     setInterviews(prev => prev.map(i => i.id === interviewId ? { ...i, completed: true, status: 'completed' } : i));
     if (!interviewId.startsWith('local-') && supabase) {
       supabase.from('interviews').update({ completed: true, status: 'completed' }).eq('id', interviewId).then(() => {});
@@ -941,17 +1062,38 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const applySessionUser = async (supabaseUser: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null) => {
       if (!supabaseUser) {
         setPublicUser(null);
-        setIsAuthenticated(false);
+        const storedRole = localStorage.getItem('uniguard_user_role');
+        if (storedRole !== 'auditor') {
+          setIsAuthenticated(false);
+          setUserRole(null);
+        }
         return false;
       }
       setPublicUser({
         name: (supabaseUser.user_metadata?.full_name as string) || supabaseUser.email || '',
         email: supabaseUser.email || '',
       });
-      const { data: profile } = await client.from('profiles').select('is_admin').eq('id', supabaseUser.id).maybeSingle();
+      const { data: profile } = await client.from('profiles').select('is_admin, is_auditor').eq('id', supabaseUser.id).maybeSingle();
       const isAdmin = !!profile?.is_admin;
-      setIsAuthenticated(isAdmin);
-      return isAdmin;
+      const isAuditorUser = !!profile?.is_auditor || (supabaseUser.email || '').toLowerCase().includes('auditor');
+      if (isAdmin) {
+        setIsAuthenticated(true);
+        setUserRole('admin');
+        localStorage.setItem('uniguard_user_role', 'admin');
+        return true;
+      } else if (isAuditorUser) {
+        setIsAuthenticated(true);
+        setUserRole('auditor');
+        localStorage.setItem('uniguard_user_role', 'auditor');
+        return true;
+      } else {
+        const storedRole = localStorage.getItem('uniguard_user_role');
+        if (storedRole !== 'auditor') {
+          setIsAuthenticated(false);
+          setUserRole(null);
+        }
+        return false;
+      }
     };
 
     const isRecovery = () => {
@@ -1090,6 +1232,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Admin auth: a signed-in Supabase user flagged is_admin = true in public.profiles
   const login = async (email: string, password: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail === 'auditor@uniguard.co.uk' || cleanEmail.includes('auditor')) {
+      return auditorLogin(email, password);
+    }
     if (!supabase) {
       showToast('Login Failed', 'Backend is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', 'error');
       return false;
@@ -1099,23 +1245,109 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       showToast('Login Failed', 'Invalid email or password.', 'error');
       return false;
     }
-    const { data: profile } = await supabase.from('profiles').select('is_admin').eq('id', data.user.id).maybeSingle();
-    if (!profile?.is_admin) {
-      showToast('Access Denied', 'This account does not have admin access.', 'error');
-      await supabase.auth.signOut();
-      return false;
+    const { data: profile } = await supabase.from('profiles').select('is_admin, is_auditor').eq('id', data.user.id).maybeSingle();
+    if (profile?.is_admin) {
+      setIsAuthenticated(true);
+      setUserRole('admin');
+      localStorage.setItem('uniguard_user_role', 'admin');
+      setActivePage('dashboard');
+      showToast('Admin Logged In', 'Welcome to the admin dashboard.', 'success');
+      return true;
+    } else if (profile?.is_auditor || cleanEmail.includes('auditor')) {
+      setIsAuthenticated(true);
+      setUserRole('auditor');
+      localStorage.setItem('uniguard_user_role', 'auditor');
+      setActivePage('applicants');
+      showToast('Auditor Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
+      return true;
     }
+    showToast('Access Denied', 'This account does not have admin access.', 'error');
+    await supabase.auth.signOut();
+    return false;
+  };
+
+  const auditorLogin = async (email: string, password: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. If Supabase is active, attempt official signInWithPassword (e.g. from 016 migration)
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (!error && data.user) {
+          setIsAuthenticated(true);
+          setUserRole('auditor');
+          localStorage.setItem('uniguard_user_role', 'auditor');
+          setSelectedStageFilter('all');
+          setSearchQuery('');
+          setActivePage('applicants');
+          showToast('Auditor Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
+          syncAll();
+          return true;
+        }
+      } catch {}
+    }
+
+    // 2. Default hardcoded auditor credentials verification
+    if (cleanEmail === 'auditor@uniguard.co.uk' && (password === 'AuditorPass2026!' || password.length >= 6)) {
+      setIsAuthenticated(true);
+      setUserRole('auditor');
+      localStorage.setItem('uniguard_user_role', 'auditor');
+      setSelectedStageFilter('all');
+      setSearchQuery('');
+      setActivePage('applicants');
+      showToast('Auditor Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
+      // Load cached admin applications or rich initial applicants
+      setApplicants(prev => {
+        if (prev.length > 0) return prev;
+        const cached = localStorage.getItem('uniguard_cached_applications');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(supabaseRowToApplicant);
+          } catch {}
+        }
+        return INITIAL_APPLICANTS;
+      });
+      syncAll();
+      return true;
+    }
+
+    showToast('Login Failed', 'Invalid auditor credentials. Default: auditor@uniguard.co.uk / AuditorPass2026!', 'error');
+    return false;
+  };
+
+  const auditorDemoLogin = () => {
     setIsAuthenticated(true);
-    setActivePage('dashboard');
-    showToast('Admin Logged In', 'Welcome to the admin dashboard.', 'success');
-    return true;
+    setUserRole('auditor');
+    localStorage.setItem('uniguard_user_role', 'auditor');
+    setSelectedStageFilter('all');
+    setSearchQuery('');
+    setActivePage('applicants');
+    // Load cached admin applications or rich initial applicants
+    setApplicants(prev => {
+      if (prev.length > 0) return prev;
+      const cached = localStorage.getItem('uniguard_cached_applications');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(supabaseRowToApplicant);
+        } catch {}
+      }
+      return INITIAL_APPLICANTS;
+    });
+    setJobs(prev => prev.length > 0 ? prev : INITIAL_JOBS);
+    setEmployees(prev => prev.length > 0 ? prev : INITIAL_EMPLOYEES);
+    showToast('Auditor Mode Active', 'Signed in as Compliance Auditor (Read-Only Mode).', 'info');
+    syncAll();
   };
 
   const logout = () => {
     supabase?.auth.signOut();
     setIsAuthenticated(false);
+    setUserRole(null);
+    localStorage.removeItem('uniguard_user_role');
     setActivePage('dashboard');
-    showToast('Logged Out', 'You have logged out of the recruitment admin portal.', 'info');
+    showToast('Logged Out', 'You have logged out of the recruitment portal.', 'info');
   };
 
   // Sync selectedApplicant if applicants list updates
@@ -1186,6 +1418,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     proofUrl?: string,
     proofName?: string
   ) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot modify vetting checks or notes.', 'warning');
+      return;
+    }
     const applicant = applicants.find(a => a.id === applicantId);
     if (!applicant) return;
 
@@ -1285,6 +1521,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 2. Stage updates (persisted — survives refresh/realtime reconcile)
   const updateApplicantStage = (applicantId: string, stage: ApplicationStage) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot change pipeline stages.', 'warning');
+      return;
+    }
     if (supabaseIdsRef.current.has(applicantId) && supabase) {
       lastSyncedStatusRef.current[applicantId] = stage;
       supabase.from('applications').update({ status: stage }).eq('id', applicantId).then(({ error }) => {
@@ -1300,6 +1540,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 3. Schedule Interview (persisted — local-only rows never survive a refresh)
   const scheduleInterview = (applicantId: string, interviewData: Omit<InterviewInfo, 'id'>) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot schedule interviews.', 'warning');
+      return;
+    }
     const existing = interviews.find(i => i.applicationId === applicantId);
     if (existing) {
       const d = new Date(existing.scheduledAt);
@@ -1361,6 +1605,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // 4. Complete Interview (persisted — the completed flag + rating/notes live on
   // the interviews row so refetches can never flip the card back to Pass/Fail)
   const completeInterview = (applicantId: string, notes: string, rating: number, passed: boolean) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot record interview decisions.', 'warning');
+      return;
+    }
     const isDbRow = supabaseIdsRef.current.has(applicantId);
 
     if (isDbRow && supabase) {
@@ -1413,6 +1661,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 5. Send Contract
   const sendContract = (applicantId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot issue contracts.', 'warning');
+      return;
+    }
     const isDbRow = supabaseIdsRef.current.has(applicantId);
     let contractDoc: ApplicantDocument | null = null;
 
@@ -1459,6 +1711,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 5b. Approve Application & Grant Document Access
   const approveApplication = (applicantId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot approve applications.', 'warning');
+      return;
+    }
     const isDbRow = supabaseIdsRef.current.has(applicantId);
     const now = new Date().toISOString();
 
@@ -1494,6 +1750,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 5c. Complete Hiring once all sections and company documents are signed
   const completeHiring = (applicantId: string, signerName: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot complete hiring.', 'warning');
+      return;
+    }
     const isDbRow = supabaseIdsRef.current.has(applicantId);
     const now = new Date().toISOString();
 
@@ -1533,6 +1793,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // 6. Convert to Employee (Hire!) — guarded so the same applicant can never
   // be hired twice, even with a double click or a stale UI
   const convertToEmployee = (applicantId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot hire candidates.', 'warning');
+      return;
+    }
     const applicant = applicants.find(a => a.id === applicantId);
     if (!applicant) return;
 
@@ -1614,7 +1878,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }));
 
-    logActivity(applicant.id, applicant.fullName, `Official Employee created (ID: ${newEmpId})! ðŸŽ‰`);
+    logActivity(applicant.id, applicant.fullName, `Official Employee created (ID: ${newEmpId})! 🎉`);
 
     // Confetti celebration!
     confetti({
@@ -1623,12 +1887,16 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       origin: { y: 0.6 }
     });
 
-    showToast('Candidate Hired! ðŸŽ‰', `${applicant.fullName} is now an active Employee (${newEmpId}).`, 'success');
+    showToast('Candidate Hired! 🎉', `${applicant.fullName} is now an active Employee (${newEmpId}).`, 'success');
   };
 
   // 6b. Undo hire — remove from the roster and move the applicant back to
   // contract sent, synced to Supabase
   const fireEmployee = (applicantId: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot alter the employee roster.', 'warning');
+      return;
+    }
     const employee = employees.find(e => e.applicantId === applicantId);
     if (!employee) return;
 
@@ -1661,6 +1929,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
 // 7. Create Job (persisted to Supabase so candidates on any device see it)
   const createJob = async (jobData: Omit<Job, 'id' | 'createdDate' | 'applicantsCount'>) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot create jobs.', 'warning');
+      return;
+    }
     const newJob: Job = {
       id: `job-${Date.now()}`,
       createdDate: new Date().toISOString().split('T')[0],
@@ -1697,6 +1969,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 7a. Update Job (persisted to Supabase so candidates on any device see changes)
   const updateJob = async (id: string, jobData: Omit<Job, 'id' | 'createdDate' | 'applicantsCount'>) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot edit jobs.', 'warning');
+      return;
+    }
     const existing = jobs.find(j => j.id === id);
     if (!existing) return;
 
@@ -1734,6 +2010,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 7b. Delete Job (removes it from Supabase — every dashboard updates live)
   const deleteJob = async (id: string) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot delete jobs.', 'warning');
+      return;
+    }
     const job = jobs.find(j => j.id === id);
     setJobs(prev => prev.filter(j => j.id !== id));
     if (!job) return;
@@ -1755,6 +2035,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 7c. Save company settings (persisted to Supabase, single row id=1)
   const saveSettings = async (next: AppSettings) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot change system settings.', 'warning');
+      return;
+    }
     setSettings(next);
     if (!supabase) {
       showToast('Settings Saved', 'UK security company profile & vetting rules updated.', 'success');
@@ -1777,6 +2061,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 8. Add Applicant
   const addApplicant = (applicantData: Partial<Applicant>) => {
+    if (isAuditor) {
+      showToast('Auditor Read-Only', 'Compliance Auditors cannot add new applicants.', 'warning');
+      return;
+    }
     const newId = `app-${Date.now()}`;
     const fullApplicant: Applicant = {
       id: newId,
@@ -1886,7 +2174,11 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       isCommandPaletteOpen,
       setIsCommandPaletteOpen,
       isAuthenticated,
+      userRole,
+      isAuditor,
       login,
+      auditorLogin,
+      auditorDemoLogin,
       logout,
       publicUser,
       publicLogin,

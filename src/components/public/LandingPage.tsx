@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
-import { Shield, ArrowRight, MapPin, Users, Award, ChevronRight } from 'lucide-react';
+import { Shield, ArrowRight, MapPin, Users, Award, ChevronRight, Mail, FileText } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
   const { setActivePage, publicUser } = useRecruitment();
@@ -175,21 +175,111 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-panel border-t border-line py-12">
+      <footer className="bg-panel border-t border-line pt-14 pb-8">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <button onClick={() => setActivePage('landing')} className="flex flex-col items-center cursor-pointer">
-              <img src="/uniguardlogo.png" alt="Uniguard Security" className="h-8 w-auto object-contain" />
-              <span className="text-[9px] font-bold text-secondary tracking-widest uppercase mt-0.5">Security Recruitment</span>
-            </button>
-            <div className="flex items-center gap-6 text-sm text-secondary">
-              <span>ACS Approved Security Contractor</span>
-              <span>•</span>
-              <span>SIA License Verified</span>
-              <span>•</span>
-              <span>BS 7858 Compliant</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-line">
+            {/* Column 1: Company Brand */}
+            <div className="space-y-4">
+              <button onClick={() => setActivePage('landing')} className="flex flex-col items-start cursor-pointer">
+                <img src="/uniguardlogo.png" alt="Uniguard" className="h-9 w-auto object-contain" />
+                <span className="text-[9px] font-bold text-secondary tracking-widest uppercase mt-0.5">Security Recruitment</span>
+              </button>
+              <p className="text-xs text-secondary leading-relaxed">
+                Specialist UK Security & SIA Personnel Recruitment. Providing vetted, BS 7858 compliant guarding solutions nationwide.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-secondary">
+                <span className="px-2.5 py-1 rounded-md bg-page border border-line">ACS Approved</span>
+                <span className="px-2.5 py-1 rounded-md bg-page border border-line">SIA Verified</span>
+                <span className="px-2.5 py-1 rounded-md bg-page border border-line">BS 7858</span>
+              </div>
             </div>
-            <p className="text-xs text-faint">© 2026 Uniguard Security Group UK. All Rights Reserved.</p>
+
+            {/* Column 2: Head Office */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Head Office</h3>
+              <div className="space-y-2.5 text-xs text-secondary leading-relaxed">
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-primary block font-semibold">Uniguard</strong>
+                    Virginia House, 56 Warwick Road<br />
+                    Solihull, Birmingham<br />
+                    B92 7HX, United Kingdom
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Mail className="w-4 h-4 text-amber-500 shrink-0" />
+                  <a href="mailto:recruitment@uniguard.co.uk" className="hover:text-primary transition-colors underline">
+                    recruitment@uniguard.co.uk
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Column 3: Quick Links */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Candidate Portal</h3>
+              <ul className="space-y-2 text-xs text-secondary">
+                <li>
+                  <button onClick={() => setActivePage('signup')} className="hover:text-primary transition-colors">
+                    Apply for Security Jobs
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setActivePage(publicUser ? 'user-dashboard' : 'login')} className="hover:text-primary transition-colors">
+                    Candidate Dashboard
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setActivePage('login')} className="hover:text-primary transition-colors">
+                    Sign In with Google
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setActivePage('auditor-login')} className="hover:text-primary transition-colors">
+                    Auditor & Staff Access
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Column 4: Legal & Policies */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Legal & Compliance</h3>
+              <ul className="space-y-2 text-xs text-secondary">
+                <li>
+                  <button onClick={() => setActivePage('privacy-policy')} className="hover:text-primary transition-colors text-left flex items-center gap-1.5 font-medium text-primary">
+                    <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Privacy Policy</span>
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setActivePage('terms')} className="hover:text-primary transition-colors text-left flex items-center gap-1.5 font-medium text-primary">
+                    <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Terms and Conditions</span>
+                  </button>
+                </li>
+                <li className="pt-2 text-[11px] text-faint leading-normal">
+                  Our vetting and candidate screening adheres to British Standard BS 7858 and the UK Data Protection Act 2018.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom Bar */}
+          <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-secondary">
+            <p>© 2026 Uniguard. All Rights Reserved.</p>
+            <div className="flex items-center gap-6">
+              <button onClick={() => setActivePage('privacy-policy')} className="hover:text-primary transition-colors">
+                Privacy Policy
+              </button>
+              <button onClick={() => setActivePage('terms')} className="hover:text-primary transition-colors">
+                Terms of Service
+              </button>
+              <button onClick={() => setActivePage('auditor-login')} className="hover:text-primary transition-colors">
+                Admin
+              </button>
+            </div>
           </div>
         </div>
       </footer>

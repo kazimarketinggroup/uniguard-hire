@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
-import { MessageSquare, Search, Send, Pencil, Trash2, Check, X, CheckCheck } from 'lucide-react';
+import { MessageSquare, Search, Send, Pencil, Trash2, Check, X, CheckCheck, ShieldCheck } from 'lucide-react';
 import { initialsOf } from '../common/recruitmentStages';
 
 export const AdminChatView: React.FC = () => {
@@ -13,6 +13,7 @@ export const AdminChatView: React.FC = () => {
     markConversationRead,
     messagesByApplication,
     showToast,
+    isAuditor,
   } = useRecruitment();
 
   const [search, setSearch] = useState('');
@@ -79,8 +80,17 @@ export const AdminChatView: React.FC = () => {
           <h2 className="text-lg font-bold text-primary flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-teal-400" />
             <span>Candidate Messaging</span>
+            {isAuditor && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+                READ-ONLY AUDIT
+              </span>
+            )}
           </h2>
-          <p className="text-xs text-secondary">Chat directly with applicants. Edit or delete a message anytime.</p>
+          <p className="text-xs text-secondary">
+            {isAuditor
+              ? 'Auditor view: inspect complete candidate communication logs and audit trails.'
+              : 'Chat directly with applicants. Edit or delete a message anytime.'}
+          </p>
         </div>
       </div>
 
@@ -191,7 +201,7 @@ export const AdminChatView: React.FC = () => {
                         <div className={`flex items-center gap-2 mt-1 text-[10px] text-tertiary px-1 ${mine ? 'justify-end' : 'justify-start'}`}>
                           <span>{timeLabel(m.createdAt)}</span>
                           {mine && (m.readByUser ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Check className="w-3.5 h-3.5 text-tertiary" />)}
-                          {mine && editingId !== m.id && (
+                          {mine && !isAuditor && editingId !== m.id && (
                             <span className="hidden group-hover:inline-flex gap-1.5">
                               <button
                                 onClick={() => { setEditingId(m.id); setEditingText(m.body); }}
@@ -212,29 +222,35 @@ export const AdminChatView: React.FC = () => {
                 <div ref={bottomRef} />
               </div>
 
-              <div className="p-4 border-t border-line bg-panel-dim flex items-end gap-2">
-                <textarea
-                  rows={1}
-                  placeholder="Type a message... (Enter to send)"
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  className="flex-1 linear-input rounded-xl px-3.5 py-2.5 text-xs resize-none max-h-28"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!draft.trim()}
-                  className="px-4 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white text-xs font-bold flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Send</span>
-                </button>
-              </div>
+              {isAuditor ? (
+                <div className="p-4 border-t border-line bg-panel-dim flex items-center justify-center text-xs text-amber-700 dark:text-amber-400 font-semibold gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" /> Candidate communication log is read-only for compliance auditors.
+                </div>
+              ) : (
+                <div className="p-4 border-t border-line bg-panel-dim flex items-end gap-2">
+                  <textarea
+                    rows={1}
+                    placeholder="Type a message... (Enter to send)"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    className="flex-1 linear-input rounded-xl px-3.5 py-2.5 text-xs resize-none max-h-28"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!draft.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white text-xs font-bold flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send</span>
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

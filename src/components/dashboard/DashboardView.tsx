@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
 import {
   Inbox,
@@ -16,7 +16,7 @@ import { requiredPending } from '../common/recruitmentStages';
 import { Avatar } from '../common/Avatar';
 
 export const DashboardView: React.FC = () => {
-  const { applicants, employees, setSelectedApplicant, setActivePage, logout } = useRecruitment();
+  const { applicants, employees, setSelectedApplicant, setActivePage, logout, isAuditor } = useRecruitment();
 
   const newCount = applicants.filter(a => a.currentStage === 'applied' || a.currentStage === 'under_review').length;
   const vettingCount = useMemo(
@@ -64,8 +64,8 @@ export const DashboardView: React.FC = () => {
 
   const actions = [
     {
-      label: 'Review New Applicants',
-      desc: 'See fresh applications and confirm SIA details',
+      label: isAuditor ? 'Audit New Applicants' : 'Review New Applicants',
+      desc: isAuditor ? 'Inspect submitted credentials and SIA details' : 'See fresh applications and confirm SIA details',
       icon: <Inbox className="w-6 h-6" />,
       iconBg: 'bg-sky-500/15 text-sky-500 border-sky-500/25',
       page: 'applicants',
@@ -73,8 +73,8 @@ export const DashboardView: React.FC = () => {
       badgeCls: 'bg-sky-500 text-white'
     },
     {
-      label: 'Do Security Checks',
-      desc: 'Approve or reject each vetting check',
+      label: isAuditor ? 'Audit BS 7858 Vetting' : 'Do Security Checks',
+      desc: isAuditor ? 'Audit 5-point verification files & dossiers' : 'Approve or reject each vetting check',
       icon: <ShieldCheck className="w-6 h-6" />,
       iconBg: 'bg-amber-500/15 text-amber-500 border-amber-500/25',
       page: 'applicants',
@@ -82,8 +82,8 @@ export const DashboardView: React.FC = () => {
       badgeCls: 'bg-amber-500 text-white'
     },
     {
-      label: 'Schedule Interviews',
-      desc: 'Book slots and see who is coming in',
+      label: isAuditor ? 'Interview Logs' : 'Schedule Interviews',
+      desc: isAuditor ? 'Inspect interview records and scores' : 'Book slots and see who is coming in',
       icon: <CalendarDays className="w-6 h-6" />,
       iconBg: 'bg-purple-500/15 text-purple-500 border-purple-500/25',
       page: 'interviews',
@@ -91,8 +91,8 @@ export const DashboardView: React.FC = () => {
       badgeCls: 'bg-purple-500 text-white'
     },
     {
-      label: 'Post a New Job',
-      desc: 'List a vacancy on the careers page',
+      label: isAuditor ? 'Job Listings Audit' : 'Post a New Job',
+      desc: isAuditor ? 'Audit guard specifications & licence criteria' : 'List a vacancy on the careers page',
       icon: <Briefcase className="w-6 h-6" />,
       iconBg: 'bg-[#AF7C28]/15 text-[#AF7C28] border-[#AF7C28]/25',
       page: 'jobs',
@@ -112,9 +112,20 @@ export const DashboardView: React.FC = () => {
           <div className="flex items-center gap-2 text-[11px] text-tertiary uppercase tracking-wider font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-[#AF7C28]" />
             <span>{today}</span>
+            {isAuditor && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+                AUDITOR PORTAL
+              </span>
+            )}
           </div>
-          <h2 className="text-xl font-extrabold text-primary mt-1">Good day!</h2>
-          <p className="text-xs text-secondary mt-0.5">Here is everything you need to do today.</p>
+          <h2 className="text-xl font-extrabold text-primary mt-1">
+            {isAuditor ? 'Compliance Audit Overview' : 'Good day!'}
+          </h2>
+          <p className="text-xs text-secondary mt-0.5">
+            {isAuditor 
+              ? 'BS 7858 compliance inspection dashboard. All verification files and logs in read-only mode.' 
+              : 'Here is everything you need to do today.'}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">

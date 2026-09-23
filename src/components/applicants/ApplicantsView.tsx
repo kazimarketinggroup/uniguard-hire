@@ -47,7 +47,8 @@ export const ApplicantsView: React.FC<ApplicantsViewProps> = ({ onOpenAddApplica
     searchQuery, 
     setSearchQuery, 
     selectedStageFilter, 
-    setSelectedStageFilter 
+    setSelectedStageFilter,
+    isAuditor
   } = useRecruitment();
 
   const filteredApplicants = applicants
@@ -83,17 +84,32 @@ export const ApplicantsView: React.FC<ApplicantsViewProps> = ({ onOpenAddApplica
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-primary tracking-tight">Applicant Management</h1>
-            <p className="text-xs text-secondary mt-1">Review applications, conduct 5-point UK SIA vetting, and issue contracts.</p>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl font-bold text-primary tracking-tight">
+                {isAuditor ? 'Compliance Vetting & Audit Archive' : 'Applicant Management'}
+              </h1>
+              {isAuditor && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 shadow-sm">
+                  BS 7858 READ-ONLY
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-secondary mt-1">
+              {isAuditor 
+                ? 'BS 7858 compliance inspection portal. Audit candidate files, right to work share codes, SIA records, and 5-year history.'
+                : 'Review applications, conduct 5-point UK SIA vetting, and issue contracts.'}
+            </p>
           </div>
 
-          <button
-            onClick={onOpenAddApplicant}
-            className="px-5 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95 shrink-0"
-          >
-            <UserPlus className="w-4 h-4 stroke-[2.5]" />
-            <span>New Application</span>
-          </button>
+          {!isAuditor && (
+            <button
+              onClick={onOpenAddApplicant}
+              className="px-5 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95 shrink-0"
+            >
+              <UserPlus className="w-4 h-4 stroke-[2.5]" />
+              <span>New Application</span>
+            </button>
+          )}
         </div>
 
         {/* 4 KPI Metric Cards */}
@@ -271,10 +287,23 @@ export const ApplicantsView: React.FC<ApplicantsViewProps> = ({ onOpenAddApplica
 
                     <button
                       onClick={(e) => { e.stopPropagation(); setSelectedApplicant(applicant); }}
-                      className="px-4 py-2 rounded-xl bg-panel-2 hover:bg-panel-3 text-primary border border-line-strong font-bold transition-all text-xs flex items-center gap-1.5 shadow-sm"
+                      className={`px-4 py-2 rounded-xl border font-bold transition-all text-xs flex items-center gap-1.5 shadow-sm ${
+                        isAuditor 
+                          ? 'bg-[#0F172A] hover:bg-slate-800 text-white border-slate-700 shadow-sm' 
+                          : 'bg-panel-2 hover:bg-panel-3 text-primary border-line-strong'
+                      }`}
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-[#AF7C28]" />
-                      <span>Review & Vetting</span>
+                      {isAuditor ? (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Audit Vetting File</span>
+                        </>
+                      ) : (
+                        <>
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-[#AF7C28]" />
+                          <span>Review & Vetting</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

@@ -3,7 +3,7 @@ import { useRecruitment } from '../../context/RecruitmentContext';
 import { Settings as SettingsIcon, ShieldCheck, Building } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const { settings, saveSettings } = useRecruitment();
+  const { settings, saveSettings, isAuditor } = useRecruitment();
 
   const [companyName, setCompanyName] = useState(settings.companyName);
   const [siaAcsApproved, setSiaAcsApproved] = useState(settings.siaAcsApproved);
@@ -11,6 +11,7 @@ export const SettingsView: React.FC = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAuditor) return;
     saveSettings({ companyName, companyNumber, siaAcsApproved });
   };
 
@@ -20,9 +21,16 @@ export const SettingsView: React.FC = () => {
         <h2 className="text-lg font-bold text-primary flex items-center gap-2">
           <SettingsIcon className="w-5 h-5 text-secondary" />
           <span>System & Vetting Configuration</span>
+          {isAuditor && (
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+              READ-ONLY AUDIT
+            </span>
+          )}
         </h2>
         <p className="text-xs text-secondary">
-          UK security recruitment compliance rules, company accreditation, and verification checklist options
+          {isAuditor
+            ? 'Auditor view: inspect organization compliance parameters and mandatory vetting rules.'
+            : 'UK security recruitment compliance rules, company accreditation, and verification checklist options'}
         </p>
       </div>
 
@@ -40,9 +48,10 @@ export const SettingsView: React.FC = () => {
               <label className="block text-secondary mb-1">Company Registered Name</label>
               <input
                 type="text"
+                disabled={isAuditor}
                 value={companyName}
                 onChange={e => setCompanyName(e.target.value)}
-                className="w-full linear-input rounded-xl p-3"
+                className="w-full linear-input rounded-xl p-3 disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -50,9 +59,10 @@ export const SettingsView: React.FC = () => {
               <label className="block text-secondary mb-1">Companies House Reg No.</label>
               <input
                 type="text"
+                disabled={isAuditor}
                 value={companyNumber}
                 onChange={e => setCompanyNumber(e.target.value)}
-                className="w-full linear-input rounded-xl p-3 font-mono"
+                className="w-full linear-input rounded-xl p-3 font-mono disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -64,8 +74,9 @@ export const SettingsView: React.FC = () => {
             </div>
             <button
               type="button"
+              disabled={isAuditor}
               onClick={() => setSiaAcsApproved(!siaAcsApproved)}
-              className={`w-12 h-6 rounded-full transition-colors relative p-1 ${siaAcsApproved ? 'bg-emerald-500' : 'bg-panel-2'}`}
+              className={`w-12 h-6 rounded-full transition-colors relative p-1 ${siaAcsApproved ? 'bg-emerald-500' : 'bg-panel-2'} ${isAuditor ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <div className={`w-4 h-4 rounded-full bg-page transition-transform ${siaAcsApproved ? 'translate-x-6' : 'translate-x-0'}`} />
             </button>
@@ -107,12 +118,19 @@ export const SettingsView: React.FC = () => {
         </div>
 
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="px-6 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold transition-all shadow-lg shadow-amber-500/25"
-          >
-            Save Settings
-          </button>
+          {isAuditor ? (
+            <div className="text-xs text-amber-700 dark:text-amber-400 font-semibold py-2 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-amber-600" />
+              <span>Compliance settings cannot be modified by audit accounts.</span>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold transition-all shadow-lg shadow-amber-500/25"
+            >
+              Save Settings
+            </button>
+          )}
         </div>
 
       </form>

@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   MessageSquare,
   Clock,
-  X
+  X,
+  Eye
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -22,7 +23,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenCreateJob, onOpenAddApplicant, onOpenGuide, onOpenNav }) => {
-  const { activePage, applicants, activityLogs, messages, setActivePage } = useRecruitment();
+  const { activePage, applicants, activityLogs, messages, setActivePage, isAuditor } = useRecruitment();
   const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -90,6 +91,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCreateJob, onOpenAddApplic
 
       {/* Action Bar */}
       <div className="flex items-center gap-3">
+        {/* Auditor Read-Only Banner */}
+        {isAuditor && (
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 text-xs font-bold shadow-sm">
+            <Eye className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="hidden sm:inline text-white">Auditor View: <span className="text-amber-400">Read-Only Mode (BS 7858 Compliance)</span></span>
+            <span className="sm:hidden text-amber-400">Auditor (Read-Only)</span>
+          </div>
+        )}
+
         {/* Pending Check Indicator */}
         {pendingChecksCount > 0 && (
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-medium">
@@ -196,41 +206,43 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCreateJob, onOpenAddApplic
           )}
         </div>
 
-        {/* Quick Action Dropdown */}
-        <div className="relative" ref={quickMenuRef}>
-          <button
-            onClick={() => setShowQuickMenu(!showQuickMenu)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs shadow-lg shadow-amber-500/25 transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Quick Action</span>
-          </button>
+        {/* Quick Action Dropdown — only for admins */}
+        {!isAuditor && (
+          <div className="relative" ref={quickMenuRef}>
+            <button
+              onClick={() => setShowQuickMenu(!showQuickMenu)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs shadow-lg shadow-amber-500/25 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Quick Action</span>
+            </button>
 
-          {showQuickMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-panel border border-line rounded-xl shadow-2xl p-1.5 z-40 text-xs animate-in fade-in zoom-in-95 duration-100">
-              <button
-                onClick={() => {
-                  setShowQuickMenu(false);
-                  onOpenCreateJob();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel-2 text-primary text-left transition-colors font-semibold"
-              >
-                <Briefcase className="w-4 h-4 text-[#AF7C28]" />
-                <span>Post New Job</span>
-              </button>
-              <button
-                onClick={() => {
-                  setShowQuickMenu(false);
-                  onOpenAddApplicant();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel-2 text-primary text-left transition-colors font-semibold"
-              >
-                <UserPlus className="w-4 h-4 text-indigo-400" />
-                <span>Add Applicant</span>
-              </button>
-            </div>
-          )}
-        </div>
+            {showQuickMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-panel border border-line rounded-xl shadow-2xl p-1.5 z-40 text-xs animate-in fade-in zoom-in-95 duration-100">
+                <button
+                  onClick={() => {
+                    setShowQuickMenu(false);
+                    onOpenCreateJob();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel-2 text-primary text-left transition-colors font-semibold"
+                >
+                  <Briefcase className="w-4 h-4 text-[#AF7C28]" />
+                  <span>Post New Job</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowQuickMenu(false);
+                    onOpenAddApplicant();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel-2 text-primary text-left transition-colors font-semibold"
+                >
+                  <UserPlus className="w-4 h-4 text-indigo-400" />
+                  <span>Add Applicant</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );

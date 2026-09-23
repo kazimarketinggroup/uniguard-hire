@@ -177,6 +177,8 @@ export interface AppSettings {
   siaAcsApproved: boolean;
 }
 
+export type UserRole = 'admin' | 'auditor' | null;
+
 export type ActivePage = 
   | 'landing'
   | 'login'
@@ -193,4 +195,8 @@ export type ActivePage =
   | 'apply'
   | 'confirm'
   | 'forgot-password'
-  | 'reset-password';
+  | 'reset-password'
+  | 'auditor-login'
+  | 'privacy-policy'
+  | 'terms';
+

@@ -27,6 +27,8 @@ import { AdminLogin } from './components/admin/AdminLogin';
 import { ConfirmEmailPage } from './components/public/ConfirmEmailPage';
 import { ForgotPasswordPage } from './components/public/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/public/ResetPasswordPage';
+import { PrivacyPolicyPage } from './components/public/PrivacyPolicyPage';
+import { TermsPage } from './components/public/TermsPage';
 import { LockKeyhole, ArrowRight } from 'lucide-react';
 
 const AuthRequired: React.FC = () => {
@@ -67,19 +69,25 @@ const AuthRequired: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { activePage, isAuthenticated, publicUser } = useRecruitment();
+  const { activePage, setActivePage, isAuthenticated, publicUser } = useRecruitment();
   const [isCreateJobOpen, setIsCreateJobOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isAddApplicantOpen, setIsAddApplicantOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  const publicPages = ['landing', 'login', 'signup', 'user-dashboard', 'apply', 'confirm', 'forgot-password', 'reset-password'];
+  React.useEffect(() => {
+    if (activePage === 'auditor-login' && isAuthenticated) {
+      setActivePage('applicants');
+    }
+  }, [activePage, isAuthenticated, setActivePage]);
+
+  const publicPages = ['landing', 'login', 'signup', 'user-dashboard', 'apply', 'confirm', 'forgot-password', 'reset-password', 'privacy-policy', 'terms'];
   const isPublicPage = publicPages.includes(activePage);
   
-  // Redirect to admin login if trying to view admin panels while not logged in
+  // Redirect to admin / auditor login if trying to view admin panels while not logged in
   const isAdminView = !publicPages.includes(activePage);
-  if (isAdminView && !isAuthenticated) {
+  if ((isAdminView || activePage === 'auditor-login') && !isAuthenticated) {
     return <AdminLogin />;
   }
 
@@ -99,6 +107,8 @@ const MainLayout: React.FC = () => {
     if (activePage === 'confirm') page = <ConfirmEmailPage />;
     if (activePage === 'forgot-password') page = <ForgotPasswordPage />;
     if (activePage === 'reset-password') page = <ResetPasswordPage />;
+    if (activePage === 'privacy-policy') page = <PrivacyPolicyPage />;
+    if (activePage === 'terms') page = <TermsPage />;
     return (
       <>
         {page}

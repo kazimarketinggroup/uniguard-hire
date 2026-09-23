@@ -1,10 +1,10 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
-import { Calendar as CalendarIcon, Clock, User, Star, Plus, Video, MapPin } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Star, Plus, Video, MapPin, ShieldCheck } from 'lucide-react';
 import { ScheduleInterviewModal } from './ScheduleInterviewModal';
 
 export const InterviewCalendarView: React.FC = () => {
-  const { applicants, completeInterview, setSelectedApplicant } = useRecruitment();
+  const { applicants, completeInterview, setSelectedApplicant, isAuditor } = useRecruitment();
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
   // Filter applicants with scheduled or completed interviews
@@ -14,6 +14,7 @@ export const InterviewCalendarView: React.FC = () => {
   const [notesInput, setNotesInput] = useState<Record<string, string>>({});
 
   const handleComplete = (applicantId: string, passed: boolean) => {
+    if (isAuditor) return;
     const rating = ratingInput[applicantId] || 0;
     const notes = notesInput[applicantId] || '';
     completeInterview(applicantId, notes, rating, passed);
@@ -26,19 +27,28 @@ export const InterviewCalendarView: React.FC = () => {
           <h2 className="text-lg font-bold text-primary flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-purple-400" />
             <span>Interview Calendar & Agenda</span>
+            {isAuditor && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+                READ-ONLY
+              </span>
+            )}
           </h2>
           <p className="text-xs text-secondary">
-            Schedule candidate screening interviews and record assessment ratings
+            {isAuditor
+              ? 'Auditor view: inspect scheduled interview agendas, recruiter notes, and candidate scores.'
+              : 'Schedule candidate screening interviews and record assessment ratings'}
           </p>
         </div>
 
-        <button
-          onClick={() => setIsScheduleOpen(true)}
-          className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-zinc-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-purple-950/40"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Schedule New Interview</span>
-        </button>
+        {!isAuditor && (
+          <button
+            onClick={() => setIsScheduleOpen(true)}
+            className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-zinc-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-purple-950/40"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Schedule New Interview</span>
+          </button>
+        )}
       </div>
 
       {/* Interviews Grid */}
@@ -111,6 +121,19 @@ export const InterviewCalendarView: React.FC = () => {
                     className="w-full py-2 rounded-lg bg-panel-2 hover:bg-panel-3 text-primary text-xs font-semibold transition-colors mt-2"
                   >
                     View Candidate Vetting Checks
+                  </button>
+                </div>
+              ) : isAuditor ? (
+                <div className="space-y-2 pt-2 border-t border-line text-xs">
+                  <div className="text-[11px] text-secondary italic">
+                    Interview is currently scheduled. Compliance audit is read-only.
+                  </div>
+                  <button
+                    onClick={() => setSelectedApplicant(applicant)}
+                    className="w-full py-2 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-white font-bold text-xs transition-colors border border-slate-700 shadow-sm flex items-center justify-center gap-1.5"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Audit Candidate Vetting File</span>
                   </button>
                 </div>
               ) : (

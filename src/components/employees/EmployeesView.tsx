@@ -3,7 +3,7 @@ import { useRecruitment } from '../../context/RecruitmentContext';
 import { UserCheck, AlertTriangle, MapPin, Search } from 'lucide-react';
 
 export const EmployeesView: React.FC = () => {
-  const { employees, searchQuery, setSearchQuery, fireEmployee } = useRecruitment();
+  const { employees, searchQuery, setSearchQuery, fireEmployee, isAuditor } = useRecruitment();
 
   const filteredEmployees = employees.filter(emp => 
     emp.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -19,9 +19,16 @@ export const EmployeesView: React.FC = () => {
           <h2 className="text-lg font-bold text-primary flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-teal-400" />
             <span>Hired Security Staff Roster ({employees.length})</span>
+            {isAuditor && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+                READ-ONLY
+              </span>
+            )}
           </h2>
           <p className="text-xs text-secondary">
-            Active security guards, site assignments, and SIA licence expiry monitoring
+            {isAuditor 
+              ? 'Auditor roster view: inspect employee IDs, SIA license validities, and deployed sites.'
+              : 'Active security guards, site assignments, and SIA licence expiry monitoring'}
           </p>
         </div>
 
@@ -99,16 +106,16 @@ export const EmployeesView: React.FC = () => {
                     </td>
 
                     <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize border ${
+                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold capitalize border ${
                         emp.status === 'active' 
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
+                          : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800'
                       }`}>
                         {emp.status.replace('_', ' ')}
                       </span>
                     </td>
 
-                    {emp.applicantId && (
+                    {emp.applicantId && !isAuditor && (
                       <td className="p-4 text-right">
                         <button
                           onClick={() => fireEmployee(emp.applicantId)}

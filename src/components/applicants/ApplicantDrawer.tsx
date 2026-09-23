@@ -24,7 +24,8 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCw,
-  RefreshCw
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 
 export const ApplicantDrawer: React.FC = () => {
@@ -39,7 +40,8 @@ export const ApplicantDrawer: React.FC = () => {
     scheduleInterviewLive,
     showToast,
     approveApplication,
-    completeHiring
+    completeHiring,
+    isAuditor
   } = useRecruitment();
 
   const [activeTab, setActiveTab] = useState<'vetting' | 'personal' | 'interview'>('vetting');
@@ -135,9 +137,8 @@ export const ApplicantDrawer: React.FC = () => {
     }
   };
 
-
-
   const handleSaveCheck = (checkType: VettingCheckType, status: CheckStatus) => {
+    if (isAuditor) return;
     const currentCheck = applicant.vettingChecks.find(c => c.type === checkType);
     const noteValue = editingNotes[checkType] !== undefined ? editingNotes[checkType] : (currentCheck?.notes || '');
     updateCheckStatus(applicant.id, checkType, status, noteValue);
@@ -149,21 +150,40 @@ export const ApplicantDrawer: React.FC = () => {
   const allRequiredApproved = requiredChecks.length > 0 && requiredChecks.every(c => c.status === 'approved');
 
   const stageLabels: Record<ApplicationStage, { label: string; bg: string; text: string }> = {
-    applied: { label: 'Applied', bg: 'bg-panel-2', text: 'text-primary' },
-    under_review: { label: 'Under Review', bg: 'bg-blue-500/10 border-blue-500/30', text: 'text-blue-500' },
-    interview_scheduled: { label: 'Interview Scheduled', bg: 'bg-purple-500/10 border-purple-500/30', text: 'text-purple-500' },
-    interview_completed: { label: 'Interview Completed', bg: 'bg-indigo-500/10 border-indigo-500/30', text: 'text-indigo-500' },
-    vetting_in_progress: { label: 'Vetting in Progress', bg: 'bg-amber-500/10 border-amber-500/30', text: 'text-amber-500' },
-    ready_for_contract: { label: 'Ready for Contract', bg: 'bg-emerald-500/20 border-emerald-500/50', text: 'text-emerald-600' },
-    contract_sent: { label: 'Contract Sent', bg: 'bg-teal-500/20 border-teal-500/40', text: 'text-teal-600' },
-    hired: { label: 'Hired Employee', bg: 'bg-emerald-500 text-white font-bold', text: 'text-white' },
-    rejected: { label: 'Rejected', bg: 'bg-rose-500/10 border-rose-500/30', text: 'text-rose-500' },
+    applied: { label: 'Applied', bg: 'bg-panel-2 border-line', text: 'text-primary' },
+    under_review: { label: 'Under Review', bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800', text: 'text-blue-700 dark:text-blue-300' },
+    interview_scheduled: { label: 'Interview Scheduled', bg: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800', text: 'text-purple-700 dark:text-purple-300' },
+    interview_completed: { label: 'Interview Completed', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800', text: 'text-indigo-700 dark:text-indigo-300' },
+    vetting_in_progress: { label: 'Vetting in Progress', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800', text: 'text-amber-800 dark:text-amber-300' },
+    ready_for_contract: { label: 'Ready for Contract', bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800', text: 'text-emerald-700 dark:text-emerald-300' },
+    contract_sent: { label: 'Contract Sent', bg: 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800', text: 'text-teal-700 dark:text-teal-300' },
+    hired: { label: 'Hired Employee', bg: 'bg-emerald-600 text-white font-bold border-emerald-600', text: 'text-white' },
+    rejected: { label: 'Rejected', bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800', text: 'text-rose-700 dark:text-rose-300' },
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedApplicant(null)}>
       <div onClick={e => e.stopPropagation()} className="w-full max-w-3xl bg-page border border-line-strong rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
         
+        {/* Auditor Notice Banner */}
+        {isAuditor && (
+          <div className="px-6 py-3 bg-[#0F172A] border-b border-slate-700 flex items-center justify-between text-xs text-slate-200 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-slate-300 leading-snug">
+                <strong className="text-white font-bold">Auditor View (BS 7858 Compliance):</strong> Read-only access to vetting files &amp; identity evidence. Modifying statuses, adding notes, and approving/rejecting are disabled.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-3.5 py-1.5 rounded-lg bg-[#AF7C28] hover:bg-[#c99a3e] active:scale-95 text-white text-xs font-bold shrink-0 ml-4 flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Download className="w-3.5 h-3.5" /> Print / Export Dossier
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="p-6 border-b border-line bg-panel-dim space-y-4">
           <div className="flex items-center justify-between">
@@ -202,38 +222,46 @@ export const ApplicantDrawer: React.FC = () => {
 
             {/* Lifecycle Buttons */}
             <div className="flex items-center gap-2">
-              {!applicant.approvedByAdmin && applicant.currentStage !== 'hired' && applicant.currentStage !== 'rejected' && (
-                <button
-                  onClick={() => approveApplication(applicant.id)}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#AF7C28] to-[#c99a3e] hover:brightness-110 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all"
-                  title="Approve applicant and release company onboarding documents to candidate dashboard"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" /> Approve & Release Documents
-                </button>
-              )}
-
-              {applicant.approvedByAdmin && applicant.currentStage !== 'hired' && (
-                <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Approved by Admin
+              {isAuditor ? (
+                <span className="px-3.5 py-1.5 rounded-xl bg-[#0F172A] text-amber-400 border border-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                  <Eye className="w-3.5 h-3.5 text-amber-400" /> Auditor Read-Only
                 </span>
-              )}
+              ) : (
+                <>
+                  {!applicant.approvedByAdmin && applicant.currentStage !== 'hired' && applicant.currentStage !== 'rejected' && (
+                    <button
+                      onClick={() => approveApplication(applicant.id)}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#AF7C28] to-[#c99a3e] hover:brightness-110 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all"
+                      title="Approve applicant and release company onboarding documents to candidate dashboard"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" /> Approve & Release Documents
+                    </button>
+                  )}
 
-              {applicant.currentStage === 'ready_for_contract' && !applicant.approvedByAdmin && (
-                <button onClick={() => sendContract(applicant.id)} className="px-4 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all">
-                  <Send className="w-3.5 h-3.5" /> Send Contract
-                </button>
-              )}
+                  {applicant.approvedByAdmin && applicant.currentStage !== 'hired' && (
+                    <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Approved by Admin
+                    </span>
+                  )}
 
-              {applicant.currentStage === 'contract_sent' && (
-                <button onClick={() => completeHiring(applicant.id, applicant.fullName)} className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all">
-                  <UserCheck className="w-3.5 h-3.5" /> Mark Hiring Complete
-                </button>
-              )}
+                  {applicant.currentStage === 'ready_for_contract' && !applicant.approvedByAdmin && (
+                    <button onClick={() => sendContract(applicant.id)} className="px-4 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all">
+                      <Send className="w-3.5 h-3.5" /> Send Contract
+                    </button>
+                  )}
 
-              {applicant.currentStage === 'hired' && (
-                <button onClick={() => fireEmployee(applicant.id)} className="px-3.5 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-500 font-semibold text-xs flex items-center gap-1.5 transition-all">
-                  <Undo2 className="w-3.5 h-3.5" /> Revert Hire
-                </button>
+                  {applicant.currentStage === 'contract_sent' && (
+                    <button onClick={() => completeHiring(applicant.id, applicant.fullName)} className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all">
+                      <UserCheck className="w-3.5 h-3.5" /> Mark Hiring Complete
+                    </button>
+                  )}
+
+                  {applicant.currentStage === 'hired' && (
+                    <button onClick={() => fireEmployee(applicant.id)} className="px-3.5 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-500 font-semibold text-xs flex items-center gap-1.5 transition-all">
+                      <Undo2 className="w-3.5 h-3.5" /> Revert Hire
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -251,7 +279,7 @@ export const ApplicantDrawer: React.FC = () => {
               onClick={() => setActiveTab('personal')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${activeTab === 'personal' ? 'bg-panel-2 text-primary border border-line-strong' : 'text-secondary hover:text-primary'}`}
             >
-              <User className="w-4 h-4 text-indigo-500" />
+              <User className="w-4 h-4 text-[#AF7C28]" />
               Personal Details & Docs ({applicant.documents.length})
             </button>
             <button
@@ -279,7 +307,7 @@ export const ApplicantDrawer: React.FC = () => {
                       <div className="text-secondary text-[11px]">Candidate is cleared for contract issuance.</div>
                     </div>
                   </div>
-                  {applicant.currentStage !== 'ready_for_contract' && (
+                  {applicant.currentStage !== 'ready_for_contract' && !isAuditor && (
                     <button onClick={() => updateApplicantStage(applicant.id, 'ready_for_contract')} className="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500">
                       Set Ready for Contract
                     </button>
@@ -308,7 +336,7 @@ export const ApplicantDrawer: React.FC = () => {
                           <div className="font-bold text-xs text-primary flex items-center gap-2">
                             <span>{check.title}</span>
                             {check.isRequired ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/30 font-semibold">Mandatory Check</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-bold">Mandatory Check</span>
                             ) : (
                               <span className="text-[10px] px-2 py-0.5 rounded bg-panel-2 text-tertiary">Optional Check</span>
                             )}
@@ -318,7 +346,11 @@ export const ApplicantDrawer: React.FC = () => {
 
                         {/* Status Badge */}
                         <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${
-                          isApproved ? 'bg-emerald-500/20 text-emerald-600 border-emerald-500/40' : isRejected ? 'bg-rose-500/20 text-rose-600 border-rose-500/40' : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
+                          isApproved 
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
+                            : isRejected 
+                            ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800' 
+                            : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800'
                         }`}>
                           {check.status}
                         </span>
@@ -404,28 +436,30 @@ export const ApplicantDrawer: React.FC = () => {
 
                           <div className="flex items-center justify-between pt-2 border-t border-line">
                             <label className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                              <FileText className="w-4 h-4 text-indigo-500" /> Proof of Check (Screenshot):
+                              <FileText className="w-4 h-4 text-[#AF7C28]" /> Proof of Check (Screenshot):
                             </label>
 
-                            <div className="relative">
-                              <input
-                                type="file"
-                                accept="image/*,.pdf"
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                onChange={e => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    const file = e.target.files[0];
-                                    const proofUrl = URL.createObjectURL(file);
-                                    updateCheckStatus(applicant.id, 'sia_licence', check.status, check.notes, proofUrl, file.name);
-                                    showToast('SIA Proof Saved', `Saved proof screenshot: ${file.name}`, 'success');
-                                  }
-                                }}
-                              />
-                              <button type="button" className="px-3 py-1.5 rounded-lg border border-line bg-panel hover:bg-panel-3 text-xs font-semibold text-primary flex items-center gap-1.5">
-                                <Upload className="w-3.5 h-3.5 text-faint" />
-                                {check.proofName ? 'Replace Proof Screenshot' : 'Upload Proof Screenshot'}
-                              </button>
-                            </div>
+                            {!isAuditor && (
+                              <div className="relative">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                  onChange={e => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      const file = e.target.files[0];
+                                      const proofUrl = URL.createObjectURL(file);
+                                      updateCheckStatus(applicant.id, 'sia_licence', check.status, check.notes, proofUrl, file.name);
+                                      showToast('SIA Proof Saved', `Saved proof screenshot: ${file.name}`, 'success');
+                                    }
+                                  }}
+                                />
+                                <button type="button" className="px-3 py-1.5 rounded-lg border border-line bg-panel hover:bg-panel-3 text-xs font-semibold text-primary flex items-center gap-1.5">
+                                  <Upload className="w-3.5 h-3.5 text-faint" />
+                                  {check.proofName ? 'Replace Proof Screenshot' : 'Upload Proof Screenshot'}
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {check.proofUrl && (
@@ -567,13 +601,19 @@ export const ApplicantDrawer: React.FC = () => {
 
                       <div className="space-y-1">
                         <label className="text-[11px] font-semibold text-secondary block">Verification Notes & Findings:</label>
-                        <textarea
-                          rows={2}
-                          placeholder="Enter admin verification findings or license details..."
-                          value={noteValue}
-                          onChange={e => setEditingNotes(prev => ({ ...prev, [check.type]: e.target.value }))}
-                          className="w-full linear-input rounded-xl p-2.5 text-xs"
-                        />
+                        {isAuditor ? (
+                          <div className="w-full rounded-xl p-3 text-xs bg-panel-2 border border-line text-slate-800 dark:text-slate-200 font-medium">
+                            {noteValue || <span className="text-secondary italic">No verification notes recorded yet.</span>}
+                          </div>
+                        ) : (
+                          <textarea
+                            rows={2}
+                            placeholder="Enter admin verification findings or license details..."
+                            value={noteValue}
+                            onChange={e => setEditingNotes(prev => ({ ...prev, [check.type]: e.target.value }))}
+                            className="w-full linear-input rounded-xl p-2.5 text-xs"
+                          />
+                        )}
                       </div>
 
                       {/* Approval Action Buttons with Distinct States */}
@@ -582,41 +622,56 @@ export const ApplicantDrawer: React.FC = () => {
                           {check.verifiedBy ? `Verified by ${check.verifiedBy} on ${check.verifiedAt}` : 'Not yet verified'}
                         </span>
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleSaveCheck(check.type, 'approved')}
-                            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                              isApproved 
-                                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500' 
-                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/30'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            {isApproved ? 'Approved ✓' : 'Approve'}
-                          </button>
-
-                          <button
-                            onClick={() => handleSaveCheck(check.type, 'rejected')}
-                            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                              isRejected 
-                                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500' 
-                                : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 border border-rose-500/30'
-                            }`}
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            {isRejected ? 'Rejected ✗' : 'Reject'}
-                          </button>
-
-                          {!isPending && (
-                            <button 
-                              onClick={() => handleSaveCheck(check.type, 'pending')} 
-                              className="px-3 py-1.5 rounded-xl bg-panel-2 hover:bg-panel-3 text-secondary text-xs flex items-center gap-1"
-                              title="Reset check to pending"
+                        {isAuditor ? (
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${
+                              isApproved
+                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                : isRejected
+                                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                            }`}>
+                              {isApproved ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : isRejected ? <XCircle className="w-3.5 h-3.5 text-rose-600" /> : <Clock className="w-3.5 h-3.5 text-amber-600" />}
+                              {isApproved ? 'Check Passed' : isRejected ? 'Check Rejected' : 'Pending Verification'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleSaveCheck(check.type, 'approved')}
+                              className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                                isApproved 
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500' 
+                                  : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/30'
+                              }`}
                             >
-                              <RotateCcw className="w-3 h-3" /> Reset
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isApproved ? 'Approved ✓' : 'Approve'}
                             </button>
-                          )}
-                        </div>
+
+                            <button
+                              onClick={() => handleSaveCheck(check.type, 'rejected')}
+                              className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                                isRejected 
+                                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500' 
+                                  : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 border border-rose-500/30'
+                              }`}
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              {isRejected ? 'Rejected ✗' : 'Reject'}
+                            </button>
+
+                            {!isPending && (
+                              <button 
+                                onClick={() => handleSaveCheck(check.type, 'pending')} 
+                                className="px-3 py-1.5 rounded-xl bg-panel-2 hover:bg-panel-3 text-secondary text-xs flex items-center gap-1"
+                                title="Reset check to pending"
+                              >
+                                <RotateCcw className="w-3 h-3" /> Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -815,7 +870,7 @@ export const ApplicantDrawer: React.FC = () => {
                             : 'Pending Admin Review & Document Access Grant'}
                         </span>
                       </div>
-                      {!applicant.approvedByAdmin && (
+                      {!applicant.approvedByAdmin && !isAuditor && (
                         <button
                           type="button"
                           onClick={() => approveApplication(applicant.id)}
@@ -857,7 +912,7 @@ export const ApplicantDrawer: React.FC = () => {
                   {applicant.documents.map(doc => (
                     <div key={doc.id} className="p-3.5 rounded-xl bg-panel border border-line flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-indigo-500" />
+                        <FileText className="w-5 h-5 text-[#AF7C28]" />
                         <div>
                           <div className="text-primary font-semibold">{doc.name}</div>
                           <div className="text-[11px] text-tertiary">Uploaded {doc.uploadedAt} • {doc.size}</div>
@@ -905,9 +960,11 @@ export const ApplicantDrawer: React.FC = () => {
                 <div className="p-8 text-center border border-dashed border-line rounded-2xl space-y-3">
                   <Calendar className="w-8 h-8 text-faint mx-auto" />
                   <p className="text-secondary font-medium">No interview currently scheduled.</p>
-                  <button onClick={() => setShowScheduleModal(true)} className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md">
-                    Schedule Interview Now
-                  </button>
+                  {!isAuditor && (
+                    <button onClick={() => setShowScheduleModal(true)} className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md">
+                      Schedule Interview Now
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -916,14 +973,20 @@ export const ApplicantDrawer: React.FC = () => {
 
         {/* Modal Footer */}
         <div className="p-4 border-t border-line bg-panel-dim flex items-center justify-between">
-          {applicant.currentStage !== 'rejected' ? (
-            <button onClick={() => { updateApplicantStage(applicant.id, 'rejected'); setSelectedApplicant(null); }} className="px-4 py-2 rounded-xl bg-rose-950/20 hover:bg-rose-950/40 border border-rose-500/40 text-rose-600 font-bold text-xs flex items-center gap-2">
-              <Ban className="w-4 h-4" /> Reject Applicant
-            </button>
+          {!isAuditor ? (
+            applicant.currentStage !== 'rejected' ? (
+              <button onClick={() => { updateApplicantStage(applicant.id, 'rejected'); setSelectedApplicant(null); }} className="px-4 py-2 rounded-xl bg-rose-950/20 hover:bg-rose-950/40 border border-rose-500/40 text-rose-600 font-bold text-xs flex items-center gap-2">
+                <Ban className="w-4 h-4" /> Reject Applicant
+              </button>
+            ) : (
+              <button onClick={() => updateApplicantStage(applicant.id, 'under_review')} className="px-4 py-2 rounded-xl bg-panel-2 hover:bg-panel-3 text-primary text-xs font-semibold">
+                Re-open Application Review
+              </button>
+            )
           ) : (
-            <button onClick={() => updateApplicantStage(applicant.id, 'under_review')} className="px-4 py-2 rounded-xl bg-panel-2 hover:bg-panel-3 text-primary text-xs font-semibold">
-              Re-open Application Review
-            </button>
+            <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 font-bold">
+              <ShieldCheck className="w-4 h-4 text-amber-600" /> Read-only compliance audit trail inspection
+            </div>
           )}
 
           <button onClick={() => setSelectedApplicant(null)} className="px-5 py-2 rounded-xl bg-panel-2 hover:bg-panel-3 text-primary font-bold text-xs">

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
 import { Briefcase, MapPin, PoundSterling, Users, ShieldCheck, Car, Plus, Trash2, Pencil } from 'lucide-react';
 import type { Job } from '../../types/recruitment';
@@ -9,7 +9,7 @@ interface JobsViewProps {
 }
 
 export const JobsView: React.FC<JobsViewProps> = ({ onOpenCreateJob, onOpenEditJob }) => {
-  const { jobs, applicants, setActivePage, setSelectedStageFilter, deleteJob } = useRecruitment();
+  const { jobs, applicants, setActivePage, setSelectedStageFilter, deleteJob, isAuditor } = useRecruitment();
 
   return (
     <div className="p-8 space-y-6 max-w-7xl mx-auto">
@@ -19,19 +19,28 @@ export const JobsView: React.FC<JobsViewProps> = ({ onOpenCreateJob, onOpenEditJ
           <h2 className="text-lg font-bold text-primary flex items-center gap-2">
             <Briefcase className="w-5 h-5 text-blue-400" />
             <span>Security Job Listings ({jobs.length})</span>
+            {isAuditor && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0F172A] text-amber-400 border border-slate-700 ml-2 shadow-sm">
+                READ-ONLY
+              </span>
+            )}
           </h2>
           <p className="text-xs text-secondary">
-            Active guard vacancies, required SIA licence types, and applicant tallies
+            {isAuditor
+              ? 'Auditor view: inspect job requirements, SIA standards, and candidate pipelines.'
+              : 'Active guard vacancies, required SIA licence types, and applicant tallies'}
           </p>
         </div>
 
-        <button
-          onClick={onOpenCreateJob}
-          className="px-4 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-amber-500/25"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Create New Job</span>
-        </button>
+        {!isAuditor && (
+          <button
+            onClick={onOpenCreateJob}
+            className="px-4 py-2 rounded-xl bg-[#AF7C28] hover:bg-[#c99a3e] text-white font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-amber-500/25"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Create New Job</span>
+          </button>
+        )}
       </div>
 
       {/* Jobs Grid */}
@@ -58,26 +67,28 @@ export const JobsView: React.FC<JobsViewProps> = ({ onOpenCreateJob, onOpenEditJ
                     {job.status.toUpperCase()}
                   </span>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => onOpenEditJob(job)}
-                      title="Edit job"
-                      className="p-1.5 rounded-lg text-tertiary hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete "${job.title}"? This removes it from every candidate dashboard immediately.`)) {
-                          deleteJob(job.id);
-                        }
-                      }}
-                      title="Delete job"
-                      className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {!isAuditor && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onOpenEditJob(job)}
+                        title="Edit job"
+                        className="p-1.5 rounded-lg text-tertiary hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete "${job.title}"? This removes it from every candidate dashboard immediately.`)) {
+                            deleteJob(job.id);
+                          }
+                        }}
+                        title="Delete job"
+                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-xs text-secondary leading-relaxed line-clamp-2">

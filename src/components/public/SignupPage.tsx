@@ -218,6 +218,13 @@ export const SignupPage: React.FC = () => {
             <span>{googleBusy ? 'Redirecting to Google…' : 'Sign up with Google'}</span>
           </button>
 
+          <p className="mt-4 text-[11px] text-faint text-center leading-relaxed">
+            By creating an account, you agree to Uniguard's{' '}
+            <button type="button" onClick={() => setActivePage('terms')} className="text-secondary hover:text-primary underline">Terms of Service</button>
+            {' '}and{' '}
+            <button type="button" onClick={() => setActivePage('privacy-policy')} className="text-secondary hover:text-primary underline">Privacy Policy</button>.
+          </p>
+
           <div className="mt-6 text-center">
             <button
               onClick={() => setActivePage('login')}
