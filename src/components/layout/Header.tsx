@@ -91,12 +91,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCreateJob, onOpenAddApplic
 
       {/* Action Bar */}
       <div className="flex items-center gap-3">
-        {/* Auditor Read-Only Banner */}
+        {/* Super Admin Read-Only Banner */}
         {isAuditor && (
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 text-xs font-bold shadow-sm">
             <Eye className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="hidden sm:inline text-white">Auditor View: <span className="text-amber-400">Read-Only Mode (BS 7858 Compliance)</span></span>
-            <span className="sm:hidden text-amber-400">Auditor (Read-Only)</span>
+            <span className="hidden sm:inline text-white">Super Admin View: <span className="text-amber-400">Read-Only Mode (BS 7858 Compliance)</span></span>
+            <span className="sm:hidden text-amber-400">Super Admin (Read-Only)</span>
           </div>
         )}
 

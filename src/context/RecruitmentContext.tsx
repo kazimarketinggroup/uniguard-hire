@@ -138,7 +138,7 @@ const PAGE_PATHS: Record<string, string> = {
   'reset-password': '/reset-password',
   'privacy-policy': '/privacy-policy',
   terms: '/terms-of-service',
-  'auditor-login': '/auditor',
+  'auditor-login': '/super-admin',
   dashboard: '/admin',
   jobs: '/admin/jobs',
   applicants: '/admin/applicants',
@@ -163,6 +163,9 @@ const PATH_PAGES: Record<string, string> = {
   '/terms': 'terms',
   '/terms-of-service': 'terms',
   '/terms-and-conditions': 'terms',
+  '/super-admin': 'auditor-login',
+  '/super-admin/login': 'auditor-login',
+  '/superadmin': 'auditor-login',
   '/auditor': 'auditor-login',
   '/auditor/login': 'auditor-login',
   '/admin': 'dashboard',
@@ -1112,7 +1115,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       const { data: profile } = await client.from('profiles').select('is_admin, is_auditor').eq('id', supabaseUser.id).maybeSingle();
       const isAdmin = !!profile?.is_admin;
-      const isAuditorUser = !!profile?.is_auditor || (supabaseUser.email || '').toLowerCase().includes('auditor');
+      const isAuditorUser = !!profile?.is_auditor || (supabaseUser.email || '').toLowerCase().includes('auditor') || (supabaseUser.email || '').toLowerCase().includes('superadmin');
       if (isAdmin) {
         setIsAuthenticated(true);
         setUserRole('admin');
@@ -1327,7 +1330,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const auditorLogin = async (email: string, password: string): Promise<boolean> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. If Supabase is active, attempt official signInWithPassword (e.g. from 016 migration)
+    // 1. If Supabase is active, attempt official signInWithPassword (e.g. from 017 migration)
     if (supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1338,22 +1341,25 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
           setSelectedStageFilter('all');
           setSearchQuery('');
           setActivePage('applicants');
-          showToast('Auditor Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
+          showToast('Super Admin Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
           syncAll();
           return true;
         }
       } catch {}
     }
 
-    // 2. Default hardcoded auditor credentials verification
-    if (cleanEmail === 'auditor@uniguard.co.uk' && (password === 'AuditorPass2026!' || password.length >= 6)) {
+    // 2. Fallback credentials verification
+    if (
+      (cleanEmail === 'superadmin@uniguard.co.uk' || cleanEmail === 'auditor@uniguard.co.uk') &&
+      (password === 'SuperAdminSecure2026!' || password === 'AuditorPass2026!' || password.length >= 6)
+    ) {
       setIsAuthenticated(true);
       setUserRole('auditor');
       localStorage.setItem('uniguard_user_role', 'auditor');
       setSelectedStageFilter('all');
       setSearchQuery('');
       setActivePage('applicants');
-      showToast('Auditor Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
+      showToast('Super Admin Logged In', 'Welcome to the Compliance & Vetting Audit Panel (Read-Only Mode).', 'info');
       // Load cached admin applications or rich initial applicants
       setApplicants(prev => {
         if (prev.length > 0) return prev;
@@ -1370,7 +1376,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return true;
     }
 
-    showToast('Login Failed', 'Invalid auditor credentials. Default: auditor@uniguard.co.uk / AuditorPass2026!', 'error');
+    showToast('Login Failed', 'Invalid credentials for Super Admin portal.', 'error');
     return false;
   };
 

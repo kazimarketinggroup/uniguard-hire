@@ -126,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
         {/* Navigation */}
         <nav className="p-3 space-y-1">
           <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-tertiary">
-            {isAuditor ? 'Auditor Menu' : 'Menu'}
+            {isAuditor ? 'Super Admin Menu' : 'Menu'}
           </div>
 
           {navItems.map((item) => {
@@ -183,11 +183,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
             <div className={`w-8 h-8 rounded-full border border-line-strong flex items-center justify-center font-bold text-xs ${
               isAuditor ? 'bg-[#0F172A] text-amber-400 border-slate-700' : 'bg-panel-2 text-primary'
             }`}>
-              {isAuditor ? 'AU' : 'UG'}
+              {isAuditor ? 'SA' : 'UG'}
             </div>
             <div>
               <div className="text-xs font-medium text-primary">
-                {isAuditor ? 'Vetting Auditor' : 'Uniguard'}
+                {isAuditor ? 'Super Admin' : 'Uniguard'}
               </div>
               <div className="text-[10px] text-tertiary">
                 {isAuditor ? 'Read-Only Audit' : 'Admin'}
