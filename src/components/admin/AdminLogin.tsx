@@ -115,7 +115,7 @@ export const AdminLogin: React.FC = () => {
                   required
                   value={email}
                   onChange={e => { setEmail(e.target.value); setError(''); }}
-                  placeholder={portalMode === 'super-admin' ? 'superadmin@uniguard.co.uk' : 'admin@uniguard.co.uk'}
+                  placeholder="Enter your email address"
                   autoComplete="username"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-page"
                 />
