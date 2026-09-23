@@ -69,7 +69,7 @@ const AuthRequired: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { activePage, setActivePage, isAuthenticated, publicUser } = useRecruitment();
+  const { activePage, setActivePage, isAuthenticated, publicUser, authLoading } = useRecruitment();
   const [isCreateJobOpen, setIsCreateJobOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isAddApplicantOpen, setIsAddApplicantOpen] = useState(false);
@@ -93,6 +93,16 @@ const MainLayout: React.FC = () => {
 
   // Candidate portal pages require a signed-in user
   if ((activePage === 'apply' || activePage === 'user-dashboard') && !publicUser) {
+    if (authLoading) {
+      return (
+        <div className="min-h-screen bg-page flex items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-line border-t-[#AF7C28] animate-spin"></div>
+            <p className="text-xs text-secondary font-medium">Verifying session…</p>
+          </div>
+        </div>
+      );
+    }
     return <AuthRequired />;
   }
 

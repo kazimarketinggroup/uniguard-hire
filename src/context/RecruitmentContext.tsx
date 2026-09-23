@@ -49,6 +49,7 @@ interface RecruitmentContextType {
   
   pendingJobId: string | null;
   setPendingJobId: (id: string | null) => void;
+  authLoading: boolean;
   
   jobs: Job[];
   applicants: Applicant[];
@@ -193,7 +194,21 @@ const pageFromPath = (path: string): ActivePage => {
 
 export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activePage, setActivePageState] = useState<ActivePage>(() => pageFromPath(window.location.pathname));
-  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [pendingJobId, setPendingJobIdState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('uniguard_pending_job_id') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const setPendingJobId = (id: string | null) => {
+    setPendingJobIdState(id);
+    try {
+      if (id) localStorage.setItem('uniguard_pending_job_id', id);
+      else localStorage.removeItem('uniguard_pending_job_id');
+    } catch {}
+  };
 
   const setActivePage = (page: ActivePage) => {
     setActivePageState(page);
@@ -229,7 +244,16 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const isAuditor = userRole === 'auditor';
 
-  const [publicUser, setPublicUser] = useState<{ name: string; email: string } | null>(null);
+  const [publicUser, setPublicUser] = useState<{ name: string; email: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('uniguard_public_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
 
   const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1059,20 +1083,33 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     const client = supabase;
     if (!client) return;
-    const applySessionUser = async (supabaseUser: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null) => {
+    const applySessionUser = async (
+      supabaseUser: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null,
+      isExplicitSignOut = false
+    ) => {
       if (!supabaseUser) {
-        setPublicUser(null);
-        const storedRole = localStorage.getItem('uniguard_user_role');
-        if (storedRole !== 'auditor') {
-          setIsAuthenticated(false);
-          setUserRole(null);
+        if (isExplicitSignOut) {
+          setPublicUser(null);
+          try {
+            localStorage.removeItem('uniguard_public_user');
+          } catch {}
+          const storedRole = localStorage.getItem('uniguard_user_role');
+          if (storedRole !== 'auditor') {
+            setIsAuthenticated(false);
+            setUserRole(null);
+          }
         }
         return false;
       }
-      setPublicUser({
+      const candidate = {
         name: (supabaseUser.user_metadata?.full_name as string) || supabaseUser.email || '',
         email: supabaseUser.email || '',
-      });
+      };
+      setPublicUser(candidate);
+      try {
+        localStorage.setItem('uniguard_public_user', JSON.stringify(candidate));
+      } catch {}
+
       const { data: profile } = await client.from('profiles').select('is_admin, is_auditor').eq('id', supabaseUser.id).maybeSingle();
       const isAdmin = !!profile?.is_admin;
       const isAuditorUser = !!profile?.is_auditor || (supabaseUser.email || '').toLowerCase().includes('auditor');
@@ -1104,23 +1141,40 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     client.auth.getSession().then(async ({ data: { session } }) => {
+      setAuthLoading(false);
       if (session?.user) {
         const isAdmin = await applySessionUser(session.user);
         const path = window.location.pathname;
-        if (isOAuthRedirect && path !== '/confirm' && !isRecovery()) {
-          setActivePage(isAdmin ? 'dashboard' : 'user-dashboard');
+        if (isOAuthRedirect) {
+          // Immediately clean up OAuth tokens from URL so subsequent app switches/reloads don't re-trigger
+          if (typeof window !== 'undefined' && (window.location.search.includes('code=') || window.location.hash.includes('access_token'))) {
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+          const isAuthEntryPage = path === '/login' || path === '/signup' || path === '/' || path === '/confirm';
+          if (isAuthEntryPage && !isRecovery()) {
+            setActivePage(isAdmin ? 'dashboard' : 'user-dashboard');
+          }
         }
       }
+    }).catch(() => {
+      setAuthLoading(false);
     });
 
     const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
-      const isAdmin = await applySessionUser(session?.user ?? null);
+      setAuthLoading(false);
+      const isExplicitSignOut = event === 'SIGNED_OUT';
+      const isAdmin = await applySessionUser(session?.user ?? null, isExplicitSignOut);
       if (event === 'PASSWORD_RECOVERY') {
         setActivePageState('reset-password');
         if (window.location.pathname !== '/reset-password') {
           window.history.pushState({ page: 'reset-password' }, '', '/reset-password');
         }
         return;
+      }
+      // Clean query code if any
+      if (event === 'SIGNED_IN' && typeof window !== 'undefined' && (window.location.search.includes('code=') || window.location.hash.includes('access_token'))) {
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
       // Only redirect on fresh sign-in if the user is explicitly on an auth entry page
       // (/login, /signup, /admin-login). Never interrupt an applicant on /apply or mid-form!
@@ -1226,6 +1280,10 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const publicLogout = () => {
     supabase?.auth.signOut();
     setPublicUser(null);
+    try {
+      localStorage.removeItem('uniguard_public_user');
+      localStorage.removeItem('uniguard_pending_job_id');
+    } catch {}
     setActivePage('landing');
     showToast('Logged Out', 'You have been logged out.', 'info');
   };
@@ -2181,6 +2239,7 @@ export const RecruitmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
       auditorDemoLogin,
       logout,
       publicUser,
+      authLoading,
       publicLogin,
       publicSignup,
       googleLogin,

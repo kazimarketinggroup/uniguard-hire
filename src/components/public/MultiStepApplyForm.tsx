@@ -151,16 +151,42 @@ const ALLOWED_EVIDENCE_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024;
+const DRAFT_KEY = 'uniguard_apply_form_draft_v1';
 
 export const MultiStepApplyForm: React.FC = () => {
   const { jobs, setActivePage, publicUser, showToast, pendingJobId } = useRecruitment();
-  const [current, setCurrent] = useState(0);
+
+  const [current, setCurrent] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.current === 'number' && parsed.current >= 0 && parsed.current < steps.length) {
+          return parsed.current;
+        }
+      }
+    } catch {}
+    return 0;
+  });
+
+  const [maxStepReached, setMaxStepReached] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.maxStepReached === 'number' && parsed.maxStepReached >= 0) {
+          return Math.max(parsed.maxStepReached, typeof parsed.current === 'number' ? parsed.current : 0);
+        }
+        if (typeof parsed.current === 'number') return parsed.current;
+      }
+    } catch {}
+    return 0;
+  });
+
   const [submitted, setSubmitted] = useState(false);
   const [refNum, setRefNum] = useState('');
 
   const selectedJob = jobs.find(j => j.id === pendingJobId) || jobs[0];
-
-  const DRAFT_KEY = 'uniguard_apply_form_draft_v1';
 
   const [form, setForm] = useState<typeof emptyForm>(() => {
     try {
@@ -189,35 +215,89 @@ export const MultiStepApplyForm: React.FC = () => {
   const [picker, setPicker] = useState<{ id: number; field: 'from' | 'to'; year: number; month: number | null } | null>(null);
   const [rtwFile, setRtwFile] = useState<File | null>(null);
   const [passportFile, setPassportFile] = useState<File | null>(null);
-  const [passportDocName, setPassportDocName] = useState('');
+  const [passportDocName, setPassportDocName] = useState(() => form.passportDocName || '');
   const [siaBadgeFile, setSiaBadgeFile] = useState<File | null>(null);
-  const [siaBadgeDocName, setSiaBadgeDocName] = useState('');
+  const [siaBadgeDocName, setSiaBadgeDocName] = useState(() => form.siaBadgeDocName || '');
   const [actCertFile, setActCertFile] = useState<File | null>(null);
-  const [actCertDocName, setActCertDocName] = useState('');
+  const [actCertDocName, setActCertDocName] = useState(() => form.actCertDocName || '');
   const [niProofFile, setNiProofFile] = useState<File | null>(null);
-  const [niProofDocName, setNiProofDocName] = useState('');
+  const [niProofDocName, setNiProofDocName] = useState(() => form.niProofDocName || '');
   const [proofAddress1File, setProofAddress1File] = useState<File | null>(null);
-  const [proofAddress1Name, setProofAddress1Name] = useState('');
+  const [proofAddress1Name, setProofAddress1Name] = useState(() => form.proofAddress1Name || '');
   const [proofAddress2File, setProofAddress2File] = useState<File | null>(null);
-  const [proofAddress2Name, setProofAddress2Name] = useState('');
+  const [proofAddress2Name, setProofAddress2Name] = useState(() => form.proofAddress2Name || '');
   const [bankProofFile, setBankProofFile] = useState<File | null>(null);
-  const [bankProofDocName, setBankProofDocName] = useState('');
+  const [bankProofDocName, setBankProofDocName] = useState(() => form.bankDocName || '');
   const [evidenceError, setEvidenceError] = useState(false);
   const [activityError, setActivityError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Persist form draft in localStorage to safeguard against tab switches or accidental reloads
+  // Keep maxStepReached in sync with forward progress
   useEffect(() => {
+    setMaxStepReached(prev => Math.max(prev, current));
+  }, [current]);
+
+  // Auto-populate candidate name and selected role from dashboard / Google login
+  useEffect(() => {
+    setForm(prev => {
+      let changed = false;
+      const next = { ...prev };
+      if (!next.fullName && publicUser?.name) {
+        next.fullName = publicUser.name;
+        changed = true;
+      }
+      if (!next.position && selectedJob?.title) {
+        next.position = selectedJob.title;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [publicUser?.name, selectedJob?.title]);
+
+  // Keep latest state in refs for synchronous flush on tab switch / backgrounding
+  const formRef = useRef(form);
+  const activitiesRef = useRef(activities);
+  const currentRef = useRef(current);
+  const maxStepRef = useRef(maxStepReached);
+
+  useEffect(() => { formRef.current = form; }, [form]);
+  useEffect(() => { activitiesRef.current = activities; }, [activities]);
+  useEffect(() => { currentRef.current = current; }, [current]);
+  useEffect(() => { maxStepRef.current = maxStepReached; }, [maxStepReached]);
+
+  const flushDraft = React.useCallback(() => {
     try {
       const serializable = {
-        form,
-        activities: activities.map(a => ({ ...a, file: null })),
-        current,
+        form: formRef.current,
+        activities: activitiesRef.current.map(a => ({ ...a, file: null })),
+        current: currentRef.current,
+        maxStepReached: maxStepRef.current,
+        lastSavedAt: Date.now(),
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(serializable));
     } catch {}
-  }, [form, activities, current]);
+  }, []);
+
+  // Persist form draft in localStorage whenever state changes
+  useEffect(() => {
+    flushDraft();
+  }, [form, activities, current, maxStepReached, flushDraft]);
+
+  // Flush IMMEDIATELY on visibilitychange (switching apps / backgrounding), pagehide, or blur
+  useEffect(() => {
+    const handleBackgrounding = () => {
+      flushDraft();
+    };
+    document.addEventListener('visibilitychange', handleBackgrounding);
+    window.addEventListener('pagehide', handleBackgrounding);
+    window.addEventListener('beforeunload', handleBackgrounding);
+    return () => {
+      document.removeEventListener('visibilitychange', handleBackgrounding);
+      window.removeEventListener('pagehide', handleBackgrounding);
+      window.removeEventListener('beforeunload', handleBackgrounding);
+    };
+  }, [flushDraft]);
 
   const formatYM = (v: string) => {
     if (!v) return '';
@@ -290,6 +370,21 @@ export const MultiStepApplyForm: React.FC = () => {
     setForm(emptyForm);
     setActivities([sampleActivity(1, 'education', '', '', '', '', '')]);
     setCurrent(0);
+    setMaxStepReached(0);
+    setPassportFile(null);
+    setPassportDocName('');
+    setSiaBadgeFile(null);
+    setSiaBadgeDocName('');
+    setActCertFile(null);
+    setActCertDocName('');
+    setNiProofFile(null);
+    setNiProofDocName('');
+    setProofAddress1File(null);
+    setProofAddress1Name('');
+    setProofAddress2File(null);
+    setProofAddress2Name('');
+    setBankProofFile(null);
+    setBankProofDocName('');
   };
 
   useEffect(() => {
@@ -338,7 +433,11 @@ export const MultiStepApplyForm: React.FC = () => {
       setEvidenceError(false);
       setActivityError('');
     }
-    if (current < steps.length - 1) setCurrent(current + 1);
+    if (current < steps.length - 1) {
+      const nextStep = current + 1;
+      setCurrent(nextStep);
+      setMaxStepReached(prev => Math.max(prev, nextStep));
+    }
   };
   const back = () => { if (current > 0) setCurrent(current - 1); };
 
@@ -490,21 +589,28 @@ export const MultiStepApplyForm: React.FC = () => {
   return (
     <div className="min-h-screen bg-page">
       <div className="border-b border-line bg-panel sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button onClick={() => setActivePage('landing')} className="flex flex-col items-center cursor-pointer">
-            <img src="/uniguardlogo.png" alt="Uniguard Security" className="h-9 w-auto object-contain" />
-            <span className="text-[9px] font-bold text-secondary tracking-widest uppercase mt-0.5">Security Recruitment</span>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+          <button onClick={() => setActivePage('landing')} className="flex flex-col items-start sm:items-center cursor-pointer">
+            <img src="/uniguardlogo.png" alt="Uniguard Security" className="h-7 sm:h-9 w-auto object-contain" />
+            <span className="text-[8px] sm:text-[9px] font-bold text-secondary tracking-widest uppercase mt-0.5">Security Recruitment</span>
           </button>
-          <div className="flex items-center gap-2">
-            <button onClick={clearForm} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-line text-secondary hover:text-rose-500 hover:border-rose-300 transition-colors">Clear</button>
-            <button onClick={() => setActivePage('user-dashboard')} className="text-sm font-medium text-secondary hover:text-primary transition-colors">← Back to Dashboard</button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-700 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Draft auto-saved</span>
+            </div>
+            <button onClick={clearForm} className="text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg border border-line text-secondary hover:text-rose-500 hover:border-rose-300 transition-colors">Clear</button>
+            <button onClick={() => setActivePage('user-dashboard')} className="text-xs sm:text-sm font-medium text-secondary hover:text-primary transition-colors whitespace-nowrap">
+              <span className="hidden sm:inline">← Back to Dashboard</span>
+              <span className="sm:hidden">← Dashboard</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-0">
-          {/* Left Rail */}
+          {/* Left Rail (Desktop) */}
           <aside className="hidden lg:block border-r border-line pr-8 py-2">
             <div className="mb-2">
               <p className="text-[11px] font-semibold tracking-widest uppercase text-faint mb-1">Progress</p>
@@ -516,12 +622,16 @@ export const MultiStepApplyForm: React.FC = () => {
             </div>
             <ul className="space-y-0">
               {steps.map((s, i) => (
-                <li key={i} onClick={() => i <= current && setCurrent(i)} className={`flex items-start gap-3 py-3 cursor-pointer transition-opacity ${i <= current ? 'opacity-100' : 'opacity-40'}`}>
-                  <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-mono flex-shrink-0 mt-0.5 ${i < current ? 'bg-emerald-600 border-emerald-600 text-white' : i === current ? 'border-amber-500 text-amber-600' : 'border-line text-faint'}`}>
+                <li
+                  key={i}
+                  onClick={() => i <= maxStepReached && setCurrent(i)}
+                  className={`flex items-start gap-3 py-3 cursor-pointer transition-opacity ${i <= maxStepReached ? 'opacity-100 hover:opacity-90' : 'opacity-40 cursor-not-allowed'}`}
+                >
+                  <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-mono flex-shrink-0 mt-0.5 ${i < current ? 'bg-emerald-600 border-emerald-600 text-white' : i === current ? 'border-amber-500 text-amber-600 bg-amber-50' : i <= maxStepReached ? 'border-amber-400 text-amber-600' : 'border-line text-faint'}`}>
                     {i < current ? '✓' : i + 1}
                   </div>
                   <div>
-                    <p className={`text-sm font-medium ${i === current ? 'text-primary' : 'text-secondary'}`}>{s.title}</p>
+                    <p className={`text-sm font-medium ${i === current ? 'text-primary font-bold' : i <= maxStepReached ? 'text-primary' : 'text-secondary'}`}>{s.title}</p>
                     <p className="text-[11px] text-faint">{s.sub}</p>
                   </div>
                 </li>
@@ -531,10 +641,24 @@ export const MultiStepApplyForm: React.FC = () => {
 
           {/* Main Form Area */}
           <div className="pl-0 lg:pl-10 py-2">
-            <div className="flex items-center gap-2 mb-6 lg:hidden overflow-x-auto pb-2">
-              {steps.map((_, i) => (
-                <div key={i} className={`h-2 rounded-full flex-shrink-0 transition-all ${i === current ? 'w-8' : 'w-2'} ${i < current ? 'bg-emerald-600' : i === current ? 'bg-amber-500' : 'bg-panel-2'}`}></div>
-              ))}
+            {/* Mobile Progress Bar & Step Counter */}
+            <div className="lg:hidden mb-6 p-4 rounded-xl border border-line bg-panel shadow-sm">
+              <div className="flex items-center justify-between mb-2 text-xs">
+                <span className="font-bold text-primary flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: '#AF7C28' }}>
+                    {current + 1}
+                  </span>
+                  <span>Step {current + 1} of {steps.length}: {steps[current].title}</span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>Saved</span>
+                </span>
+              </div>
+              <div className="h-2 w-full bg-panel-2 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${(current / (steps.length - 1)) * 100}%`, backgroundColor: '#AF7C28' }}></div>
+              </div>
+              <p className="text-[11px] text-secondary mt-2">{steps[current].sub}</p>
             </div>
 
             <div className="mb-8">
@@ -603,11 +727,18 @@ export const MultiStepApplyForm: React.FC = () => {
                       <label className="block text-sm font-medium text-secondary mb-1.5">Position applied for <span style={{ color: '#AF7C28' }}>•</span></label>
                       <select required value={form.position} onChange={e => update('position', e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-line text-sm focus:outline-none focus:border-line-strong bg-panel">
                         <option value="">Select a role</option>
-                        <option>Security Officer — Static Site</option>
-                        <option>Security Officer — Mobile Patrol</option>
-                        <option>Door Supervisor</option>
-                        <option>CCTV / Control Room Operator</option>
-                        <option>Other</option>
+                        {/* Dynamic vacancies from company dashboard */}
+                        {jobs.filter(j => j.status === 'active').map(j => (
+                          <option key={j.id} value={j.title}>{j.title}</option>
+                        ))}
+                        {form.position && !jobs.some(j => j.title === form.position) && (
+                          <option value={form.position}>{form.position}</option>
+                        )}
+                        <option value="Security Officer — Static Site">Security Officer — Static Site</option>
+                        <option value="Security Officer — Mobile Patrol">Security Officer — Mobile Patrol</option>
+                        <option value="Door Supervisor">Door Supervisor</option>
+                        <option value="CCTV / Control Room Operator">CCTV / Control Room Operator</option>
+                        <option value="Other">Other</option>
                       </select>
                     </div>
 
@@ -717,20 +848,21 @@ export const MultiStepApplyForm: React.FC = () => {
                                 }
                                 setNiProofFile(f);
                                 setNiProofDocName(f.name);
+                                update('niProofDocName', f.name);
                               }
                             }}
                           />
                           <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
                             <div className="flex items-center gap-2 truncate">
                               <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-                              <span className={`text-xs truncate ${niProofDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
-                                {niProofDocName || 'Upload NI document proof'}
+                              <span className={`text-xs truncate ${niProofDocName || form.niProofDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {niProofDocName || form.niProofDocName || 'Upload NI document proof'}
                               </span>
                             </div>
-                            {niProofDocName && (
+                            {(niProofDocName || form.niProofDocName) && (
                               <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); setNiProofFile(null); setNiProofDocName(''); }}
+                                onClick={e => { e.stopPropagation(); setNiProofFile(null); setNiProofDocName(''); update('niProofDocName', ''); }}
                                 className="text-tertiary hover:text-rose-500 text-xs p-1"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -765,20 +897,21 @@ export const MultiStepApplyForm: React.FC = () => {
                                 }
                                 setSiaBadgeFile(f);
                                 setSiaBadgeDocName(f.name);
+                                update('siaBadgeDocName', f.name);
                               }
                             }}
                           />
                           <div className="w-full h-[40px] rounded-lg border border-dashed border-line bg-panel flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
                             <div className="flex items-center gap-2 truncate">
                               <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-                              <span className={`text-xs truncate ${siaBadgeDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
-                                {siaBadgeDocName || 'Upload copy of SIA badge'}
+                              <span className={`text-xs truncate ${siaBadgeDocName || form.siaBadgeDocName ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                                {siaBadgeDocName || form.siaBadgeDocName || 'Upload copy of SIA badge'}
                               </span>
                             </div>
-                            {siaBadgeDocName && (
+                            {(siaBadgeDocName || form.siaBadgeDocName) && (
                               <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); setSiaBadgeFile(null); setSiaBadgeDocName(''); }}
+                                onClick={e => { e.stopPropagation(); setSiaBadgeFile(null); setSiaBadgeDocName(''); update('siaBadgeDocName', ''); }}
                                 className="text-tertiary hover:text-rose-500 text-xs p-1"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1276,20 +1409,21 @@ export const MultiStepApplyForm: React.FC = () => {
                               }
                               setProofAddress1File(f);
                               setProofAddress1Name(f.name);
+                              update('proofAddress1Name', f.name);
                             }
                           }}
                         />
                         <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
                           <div className="flex items-center gap-2 truncate">
                             <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-                            <span className={`text-xs truncate ${proofAddress1Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
-                              {proofAddress1Name || 'Upload Proof 1'}
+                            <span className={`text-xs truncate ${proofAddress1Name || form.proofAddress1Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {proofAddress1Name || form.proofAddress1Name || 'Upload Proof 1'}
                             </span>
                           </div>
-                          {proofAddress1Name && (
+                          {(proofAddress1Name || form.proofAddress1Name) && (
                             <button
                               type="button"
-                              onClick={e => { e.stopPropagation(); setProofAddress1File(null); setProofAddress1Name(''); }}
+                              onClick={e => { e.stopPropagation(); setProofAddress1File(null); setProofAddress1Name(''); update('proofAddress1Name', ''); }}
                               className="text-tertiary hover:text-rose-500 text-xs p-1"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1323,20 +1457,21 @@ export const MultiStepApplyForm: React.FC = () => {
                               }
                               setProofAddress2File(f);
                               setProofAddress2Name(f.name);
+                              update('proofAddress2Name', f.name);
                             }
                           }}
                         />
                         <div className="w-full h-[42px] rounded-lg border border-dashed border-line bg-panel-2 flex items-center justify-between px-3 cursor-pointer hover:border-line-strong transition-colors">
                           <div className="flex items-center gap-2 truncate">
                             <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-                            <span className={`text-xs truncate ${proofAddress2Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
-                              {proofAddress2Name || 'Upload Proof 2'}
+                            <span className={`text-xs truncate ${proofAddress2Name || form.proofAddress2Name ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
+                              {proofAddress2Name || form.proofAddress2Name || 'Upload Proof 2'}
                             </span>
                           </div>
-                          {proofAddress2Name && (
+                          {(proofAddress2Name || form.proofAddress2Name) && (
                             <button
                               type="button"
-                              onClick={e => { e.stopPropagation(); setProofAddress2File(null); setProofAddress2Name(''); }}
+                              onClick={e => { e.stopPropagation(); setProofAddress2File(null); setProofAddress2Name(''); update('proofAddress2Name', ''); }}
                               className="text-tertiary hover:text-rose-500 text-xs p-1"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1745,20 +1880,36 @@ export const MultiStepApplyForm: React.FC = () => {
             )}
 
             {/* Navigation */}
-            <div className="flex items-center justify-between mt-10 pt-6 border-t border-line">
-              <button onClick={back} disabled={current === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-secondary border border-line hover:border-line-strong transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <div className="flex items-center justify-between gap-3 mt-10 pt-6 border-t border-line">
+              <button
+                type="button"
+                onClick={back}
+                disabled={current === 0}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-secondary border border-line hover:border-line-strong transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[46px]"
+              >
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
               {current < steps.length - 1 ? (
-                <button onClick={next} className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.98]" style={{ backgroundColor: '#AF7C28' }}>
+                <button
+                  type="button"
+                  onClick={next}
+                  className="flex items-center justify-center gap-2 px-6 sm:px-8 py-3 rounded-xl text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.98] min-h-[46px]"
+                  style={{ backgroundColor: '#AF7C28' }}
+                >
                   Continue <ArrowRight className="w-4 h-4" />
                 </button>
               ) : (
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
                   {submitError && (
                     <p className="text-xs font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 max-w-sm text-right animate-pop-in">{submitError}</p>
                   )}
-                  <button onClick={handleSubmit} disabled={!form.agree1 || !form.agree2 || !form.printName || submitting} className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: '#AF7C28' }}>
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={!form.agree1 || !form.agree2 || !form.printName || submitting}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 sm:px-8 py-3 rounded-xl text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed min-h-[46px]"
+                    style={{ backgroundColor: '#AF7C28' }}
+                  >
                     {submitting ? 'Submitting…' : 'Submit application'} <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
