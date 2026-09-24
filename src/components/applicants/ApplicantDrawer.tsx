@@ -25,7 +25,8 @@ import {
   ZoomOut,
   RotateCw,
   RefreshCw,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 
 export const ApplicantDrawer: React.FC = () => {
@@ -71,7 +72,7 @@ export const ApplicantDrawer: React.FC = () => {
   };
 
   const resolvePublicUrl = (urlOrPath?: string) => {
-    if (!urlOrPath || urlOrPath === '#') return '';
+    if (!urlOrPath || urlOrPath === '#' || urlOrPath === 'undefined') return '';
     if (
       urlOrPath.startsWith('http://') || 
       urlOrPath.startsWith('https://') || 
@@ -79,6 +80,10 @@ export const ApplicantDrawer: React.FC = () => {
       urlOrPath.startsWith('data:')
     ) {
       return urlOrPath;
+    }
+    // If it's a raw filename without a path slash (e.g. "The print LOR.pdf"), it was never uploaded to storage
+    if (!urlOrPath.includes('/')) {
+      return '';
     }
     let cleanPath = urlOrPath.replace(/^\/+/, '');
     if (cleanPath.startsWith('evidence/')) {
@@ -111,7 +116,10 @@ export const ApplicantDrawer: React.FC = () => {
 
   const handleViewDoc = (name: string, url: string) => {
     const finalUrl = resolvePublicUrl(url);
-    if (!finalUrl) return showToast('Unavailable', 'Document URL not found.', 'error');
+    if (!finalUrl) {
+      showToast('Document Not Stored', `"${url}" was referenced by the applicant, but the binary file was not uploaded to the server. Please contact the applicant to supply this document.`, 'warning');
+      return;
+    }
     setZoomScale(1);
     setRotation(0);
     setPreviewDoc({ name, url: finalUrl });
@@ -119,9 +127,19 @@ export const ApplicantDrawer: React.FC = () => {
 
   const handleDirectDownload = async (name: string, url: string) => {
     const finalUrl = resolvePublicUrl(url);
-    if (!finalUrl) return showToast('Unavailable', 'Document URL not found.', 'error');
+    if (!finalUrl) {
+      showToast('Document Not Stored', `"${url}" was referenced by the applicant, but the binary file was not uploaded to the server.`, 'warning');
+      return;
+    }
     try {
       const res = await fetch(finalUrl);
+      if (!res.ok) {
+        throw new Error(`File not found in storage (HTTP ${res.status})`);
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        throw new Error('Storage file could not be retrieved.');
+      }
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -132,8 +150,8 @@ export const ApplicantDrawer: React.FC = () => {
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       showToast('Download Started', `Downloading ${name}`, 'success');
-    } catch {
-      window.open(finalUrl, '_blank');
+    } catch (err: any) {
+      showToast('Download Failed', err?.message || 'Could not download file from storage.', 'error');
     }
   };
 
@@ -551,23 +569,29 @@ export const ApplicantDrawer: React.FC = () => {
                                   {(act.evidence || act.evidencePath) && (
                                     <div className="pt-1 flex items-center justify-between border-t border-line/60">
                                       <span className="text-[10px] text-faint truncate max-w-[180px]">Doc: {act.evidence ? String(act.evidence).split('/').pop() : 'Uploaded Evidence'}</span>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleViewDoc(formatSmartFilename(`5Year_History_Year_${idx + 1}_Proof`, act.evidencePath || act.evidence), act.evidencePath || act.evidence)}
-                                          className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
-                                        >
-                                          <Eye className="w-3 h-3" /> View Proof
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDirectDownload(formatSmartFilename(`5Year_History_Year_${idx + 1}_Proof`, act.evidencePath || act.evidence), act.evidencePath || act.evidence)}
-                                          className="text-[11px] font-bold text-tertiary hover:text-primary flex items-center gap-1"
-                                          title="Download Year Proof"
-                                        >
-                                          <Download className="w-3 h-3" />
-                                        </button>
-                                      </div>
+                                      {resolvePublicUrl(act.evidencePath || act.evidence) ? (
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleViewDoc(formatSmartFilename(`5Year_History_Year_${idx + 1}_Proof`, act.evidencePath || act.evidence), act.evidencePath || act.evidence)}
+                                            className="text-[11px] font-bold text-[#AF7C28] hover:underline flex items-center gap-1"
+                                          >
+                                            <Eye className="w-3 h-3" /> View Proof
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDirectDownload(formatSmartFilename(`5Year_History_Year_${idx + 1}_Proof`, act.evidencePath || act.evidence), act.evidencePath || act.evidence)}
+                                            className="text-[11px] font-bold text-tertiary hover:text-primary flex items-center gap-1"
+                                            title="Download Year Proof"
+                                          >
+                                            <Download className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] font-medium text-amber-700 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1" title="Candidate provided document name but file was not uploaded to server">
+                                          <AlertTriangle className="w-3 h-3 text-amber-500" /> Pending Upload
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -919,12 +943,20 @@ export const ApplicantDrawer: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => handleViewDoc(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs flex items-center gap-1.5 font-bold border border-[#AF7C28]/30">
-                          <Eye className="w-3.5 h-3.5" /> View
-                        </button>
-                        <button onClick={() => handleDirectDownload(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-panel-2 hover:bg-panel-3 text-primary text-xs flex items-center gap-1.5 font-semibold">
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </button>
+                        {resolvePublicUrl(doc.fileUrl) ? (
+                          <>
+                            <button onClick={() => handleViewDoc(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-[#AF7C28]/10 hover:bg-[#AF7C28]/20 text-[#AF7C28] text-xs flex items-center gap-1.5 font-bold border border-[#AF7C28]/30">
+                              <Eye className="w-3.5 h-3.5" /> View
+                            </button>
+                            <button onClick={() => handleDirectDownload(formatSmartFilename(doc.name, doc.fileUrl), doc.fileUrl)} className="px-3 py-1.5 rounded-lg bg-panel-2 hover:bg-panel-3 text-primary text-xs flex items-center gap-1.5 font-semibold">
+                              <Download className="w-3.5 h-3.5" /> Download
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] font-medium text-amber-700 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded flex items-center gap-1" title="Document file not uploaded to server">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Pending Upload
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}

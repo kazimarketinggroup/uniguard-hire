@@ -205,7 +205,17 @@ export const MultiStepApplyForm: React.FC = () => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed.activities) && parsed.activities.length > 0) {
-          return parsed.activities;
+          // If an activity already has an active storage URL or path, keep it.
+          // If it only had a local filename string and no binary file/storage path, clear it so candidate re-selects it!
+          return parsed.activities.map((a: any) => {
+            const isPersistedInStorage = !!a.evidencePath || (typeof a.evidence === 'string' && (a.evidence.startsWith('http://') || a.evidence.startsWith('https://')));
+            return {
+              ...a,
+              evidence: isPersistedInStorage ? a.evidence : '',
+              evidencePath: isPersistedInStorage ? a.evidencePath : undefined,
+              file: null
+            };
+          });
         }
       }
     } catch {}
@@ -453,15 +463,36 @@ export const MultiStepApplyForm: React.FC = () => {
       type StoredActivity = Omit<ActivityItem, 'file'> & { file?: undefined };
       let storedActivities: StoredActivity[] = activities.map(a => ({ ...a, file: undefined }));
 
+      // Verify that every required activity has its file either uploaded or in memory
+      const missingEvidenceActivity = activities.find(a => {
+        if (isShortPermittedGap(a)) return false;
+        const hasUploaded = a.evidencePath || (a.evidence && (a.evidence.startsWith('http://') || a.evidence.startsWith('https://') || a.evidence.startsWith('blob:')));
+        return !a.file && !hasUploaded && a.title;
+      });
+      if (missingEvidenceActivity) {
+        setSubmitError(`Please attach the proof document for "${missingEvidenceActivity.title || 'your 5-year history entry'}" before submitting.`);
+        setSubmitting(false);
+        setCurrent(1);
+        return;
+      }
+
       if (user) {
         const uploaded: StoredActivity[] = [];
         for (const a of activities) {
-          if (!a.file) { uploaded.push({ ...a, file: undefined }); continue; }
+          // If already uploaded with a valid storage URL/path, keep it
+          if (a.evidencePath && a.evidence && (a.evidence.startsWith('http://') || a.evidence.startsWith('https://'))) {
+            uploaded.push({ ...a, file: undefined });
+            continue;
+          }
+          if (!a.file) {
+            uploaded.push({ ...a, file: undefined });
+            continue;
+          }
           const compressed = await compressEvidence(a.file);
           const ext = compressed.name.match(/\.[^.]+$/)?.[0] || '.pdf';
           const path = `${user.id}/${a.id}-${Date.now()}${ext}`;
           const { error: upErr } = await supabase.storage.from('evidence').upload(path, compressed, { cacheControl: '3600', upsert: false });
-          if (upErr) throw new Error(`Evidence upload failed: ${upErr.message}`);
+          if (upErr) throw new Error(`Evidence upload failed for ${a.title || 'entry'}: ${upErr.message}`);
           const { data } = supabase.storage.from('evidence').getPublicUrl(path);
           uploaded.push({ ...a, evidence: data.publicUrl, evidencePath: path, file: undefined });
         }
@@ -1258,7 +1289,7 @@ export const MultiStepApplyForm: React.FC = () => {
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            onChange={e => {
+                            onChange={async e => {
                               if (e.target.files && e.target.files[0]) {
                                 const f = e.target.files[0];
                                 const ext = '.' + (f.name.split('.').pop() || '').toLowerCase();
@@ -1275,10 +1306,36 @@ export const MultiStepApplyForm: React.FC = () => {
                                   e.target.value = '';
                                   return;
                                 }
+
+                                // Optimistically set file and filename
                                 setActivities(prev => prev.map(a => a.id === activity.id ? { ...a, evidence: f.name, file: f } : a));
                                 setEvidenceError(false);
                                 setActivityError('');
                                 e.target.value = '';
+
+                                // Auto-upload immediately to Supabase Storage if user is signed in
+                                if (supabase) {
+                                  try {
+                                    const { data: { user: currentUser } } = await supabase.auth.getUser();
+                                    if (currentUser) {
+                                      const compressed = await compressEvidence(f);
+                                      const fileExt = compressed.name.match(/\.[^.]+$/)?.[0] || ext;
+                                      const path = `${currentUser.id}/${activity.id}-${Date.now()}${fileExt}`;
+                                      const { error: upErr } = await supabase.storage.from('evidence').upload(path, compressed, { cacheControl: '3600', upsert: false });
+                                      if (!upErr) {
+                                        const { data } = supabase.storage.from('evidence').getPublicUrl(path);
+                                        setActivities(prev => prev.map(a => a.id === activity.id ? {
+                                          ...a,
+                                          evidence: data.publicUrl,
+                                          evidencePath: path,
+                                          file: f
+                                        } : a));
+                                      }
+                                    }
+                                  } catch (uploadErr) {
+                                    console.warn('Background activity upload deferred to form submission:', uploadErr);
+                                  }
+                                }
                               }
                             }}
                           />
@@ -1286,7 +1343,11 @@ export const MultiStepApplyForm: React.FC = () => {
                             <div className="flex items-center gap-2 truncate">
                               <Upload className="w-3.5 h-3.5 text-faint flex-shrink-0" />
                               <span className={`text-xs truncate ${activity.evidence ? 'font-medium text-[#AF7C28]' : 'text-faint'}`}>
-                                {activity.evidence || (isShortPermittedGap(activity) ? 'Optional — no proof required' : 'Upload document')}
+                                {activity.evidence
+                                  ? (activity.evidence.startsWith('http')
+                                      ? (activity.evidence.split('/').pop() || 'Uploaded document')
+                                      : activity.evidence)
+                                  : (isShortPermittedGap(activity) ? 'Optional — no proof required' : 'Upload document')}
                               </span>
                             </div>
                             {activity.evidence && (
