@@ -6,6 +6,26 @@ Comprehensive changelog and operational history tracking issues encountered, tim
 
 ## Log Entries
 
+### [2026-09-24 13:45:10 UTC+6] 5-Year History Evidence 404 & Corrupted PDF Download Bug
+* **Issue:** 
+  * In the candidate drawer, clicking "Download" or "View Proof" on an applicant's 5-Year History evidence (e.g. Harisundar Kumar's "The print LOR.pdf") downloaded an unreadable 88-byte corrupted `.pdf` file.
+  * When opened in Edge/Chrome, the browser displayed: *"We can't open this file. Something went wrong."*
+  * Meanwhile, the Passport and Bank documents for the same applicant downloaded and previewed properly.
+* **Components Affected:** 
+  * [`src/components/applicants/ApplicantDrawer.tsx`](file:///e:/Uniguard%20Hire/src/components/applicants/ApplicantDrawer.tsx)
+  * [`src/components/public/MultiStepApplyForm.tsx`](file:///e:/Uniguard%20Hire/src/components/public/MultiStepApplyForm.tsx)
+* **Root Cause:** 
+  1. **Upload Phase:** In `MultiStepApplyForm.tsx`, when a candidate drafted their 5-year history and subsequently backgrounded the tab or restored a draft from `localStorage`, browser security cleared the in-memory binary `File` objects (`file: null`), while preserving the text filename (`evidence: "The print LOR.pdf"`). During form submission, the code checked `if (!a.file) continue;`, silently skipping the storage upload and storing only the raw filename string in Supabase instead of a storage path/URL.
+  2. **Download Phase:** In `ApplicantDrawer.tsx`, `resolvePublicUrl` treated plain filename strings (which lacked a user/folder path) as root storage keys. When fetched, Supabase Storage returned an HTTP 404 JSON error (`{"statusCode":"404","error":"not_found","message":"Object not found"}`).
+  3. Because `handleDirectDownload` had no HTTP status validation (`!res.ok`), it converted the 404 JSON text into a blob and saved it as a `.pdf` file, producing an invalid PDF.
+* **Resolution / Fix:**
+  1. **Safe URL Resolution & Rejection of Missing Files:** Updated `resolvePublicUrl` in `ApplicantDrawer.tsx` to require valid path slashes or web URLs. Raw file names without storage paths return empty strings.
+  2. **Safe Downloader & Previewer:** Added `res.ok` and JSON error validation to `handleDirectDownload`. If a storage file is missing or returns 404, it immediately aborts with a clear notification rather than saving a corrupted file.
+  3. **Visual Transparency:** In `ApplicantDrawer.tsx`, entries whose binary files were not uploaded to Supabase now display a clear `⚠️ Pending Upload` badge instead of broken preview/download buttons.
+  4. **Auto-Upload on Selection:** In `MultiStepApplyForm.tsx`, activity files are now immediately compressed and uploaded to Supabase Storage upon selection if authenticated. Both the storage public URL and storage path are stored in the state and draft, surviving backgrounding, tab restores, and reloads.
+  5. **Pre-Submission Upload Gate:** Added a pre-submit check in `MultiStepApplyForm.tsx` ensuring that if any required activity file is missing from both storage and memory, submission is blocked with an actionable prompt directing the candidate back to Step 2 to attach the file.
+* **Commit:** `24b3b6c`
+
 ### [2026-09-23 21:50:22 UTC+6] Mobile Stepper & Document Badge Overflow
 * **Issue:** 
   * On mobile viewports (< 440px width), the 6-stage applicant progress tracker (`Application Sent` ➔ `Hired`) broke outside the white card boundaries. The 6th stage ("Hired" yellow icon) was pushed completely off-screen, and step circles were distorted into ovals on narrow viewports.
