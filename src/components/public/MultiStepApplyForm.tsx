@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRecruitment } from '../../context/RecruitmentContext';
-import { ArrowRight, ArrowLeft, CheckCircle2, Plus, Trash2, Upload, ChevronDown } from 'lucide-react';
+import { ArrowRight, ArrowLeft, CheckCircle2, Plus, Trash2, Upload, ChevronDown, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { compressEvidence } from '../../lib/compressFile';
 import { BS7858Guidance } from '../common/BS7858Guidance';
+import { validateFiveYearHistory, getFiveYearVettingWindow, isShortPermittedGap } from '../../utils/vettingValidation';
 
 const steps = [
   { title: 'Personal Details', sub: 'Who you are' },
@@ -329,36 +330,12 @@ export const MultiStepApplyForm: React.FC = () => {
     });
   };
 
-  const isShortPermittedGap = (a: ActivityItem) => {
-    if (a.type !== 'gap') return false;
-    if (!a.from || !a.to) return false;
-    const from = new Date(a.from);
-    const to = a.to === 'Present' ? new Date() : new Date(a.to);
-    if (isNaN(from.getTime()) || isNaN(to.getTime()) || to < from) return false;
-    const diffDays = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
-    const diffMonths = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-    // Up to 35 calendar days OR 1 calendar month
-    return diffDays <= 35 || (diffMonths <= 1 && diffDays <= 45);
-  };
-
-  const coverageYears = () => {
-    let months = 0;
-    let hasAny = false;
-    activities.forEach(a => {
-      if (!a.from || !a.to) return;
-      hasAny = true;
-      const from = new Date(a.from);
-      const to = a.to === 'Present' ? new Date() : new Date(a.to);
-      if (isNaN(from.getTime()) || isNaN(to.getTime()) || to < from) return;
-      const m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-      months += Math.max(1, m);
-    });
-    return { months, hasAny };
-  };
+  const vettingWindow = useMemo(() => getFiveYearVettingWindow(), []);
+  const vettingStatus = useMemo(() => validateFiveYearHistory(activities), [activities]);
 
   const coverageInvalid = () => {
-    const { months, hasAny } = coverageYears();
-    return hasAny && months < 59;
+    const hasAny = activities.some(a => a.title || a.from || a.to || a.evidence || a.file);
+    return hasAny && !vettingStatus.isValid;
   };
 
   const update = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
@@ -406,38 +383,25 @@ export const MultiStepApplyForm: React.FC = () => {
       setEvidenceError(false);
       setActivityError('');
 
-      // Filter activities that have any content filled in
-      const started = activities.filter(a => a.title || a.from || a.to || a.evidence || a.file);
-      if (started.length === 0) {
-        setActivityError('Add at least one activity — fill in details, dates, and evidence.');
+      // Run dynamic BS 7858 5-year vetting validation
+      const vetting = validateFiveYearHistory(activities);
+      if (!vetting.isValid) {
+        setEvidenceError(false);
+        setActivityError(vetting.error || 'Your 5-year activity history is incomplete or out of date.');
         return;
       }
 
-      // Check each started activity
+      // Check evidence requirement for every started activity (except permitted gaps)
+      const started = activities.filter(a => a.title || a.from || a.to || a.evidence || a.file);
       for (let i = 0; i < started.length; i++) {
         const a = started[i];
         const num = i + 1;
-        if (!a.from || !a.to) {
-          setActivityError(`Activity #${num} is missing From or To date. Please select both dates.`);
-          return;
-        }
-        if (!a.title && a.type !== 'gap') {
-          setActivityError(`Activity #${num} is missing Employer, School, or Course details.`);
-          return;
-        }
         const isPermittedGap = a.type === 'gap' && isShortPermittedGap(a);
         if (!isPermittedGap && !a.evidence && !a.file) {
           setActivityError(`Activity #${num} (${a.title || 'Gap over 1 month'}) requires documentary evidence.`);
           setEvidenceError(true);
           return;
         }
-      }
-
-      const { months } = coverageYears();
-      if (months < 59) {
-        setEvidenceError(false);
-        setActivityError(`Your entries currently cover ${(months / 12).toFixed(1)} of 5 years — add more activities or account for any career breaks to reach the 5-year requirement.`);
-        return;
       }
 
       setEvidenceError(false);
@@ -462,6 +426,15 @@ export const MultiStepApplyForm: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       type StoredActivity = Omit<ActivityItem, 'file'> & { file?: undefined };
       let storedActivities: StoredActivity[] = activities.map(a => ({ ...a, file: undefined }));
+
+      // Pre-submission 5-year vetting verification
+      const preSubmitVetting = validateFiveYearHistory(activities);
+      if (!preSubmitVetting.isValid) {
+        setSubmitError(preSubmitVetting.error || 'Your 5-year activity history is incomplete or out of date.');
+        setSubmitting(false);
+        setCurrent(1);
+        return;
+      }
 
       // Verify that every required activity has its file either uploaded or in memory
       const missingEvidenceActivity = activities.find(a => {
@@ -1052,6 +1025,48 @@ export const MultiStepApplyForm: React.FC = () => {
                 {/* BS7858 Guidance Manual */}
                 <BS7858Guidance />
 
+                {/* Dynamic 5-Year Vetting Timeline Monitor */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  vettingStatus.isValid
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    : 'border-amber-500/30 bg-amber-500/5'
+                }`}>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                          Mandatory BS 7858 Period:
+                        </span>
+                        <span className="text-xs font-mono font-bold text-[#AF7C28] px-2 py-0.5 rounded bg-[#AF7C28]/10 border border-[#AF7C28]/20">
+                          {vettingWindow.startFormatted} → Present ({vettingWindow.endFormatted})
+                        </span>
+                      </div>
+                      <p className="text-xs text-secondary mt-1">
+                        {vettingStatus.isValid ? (
+                          <span className="text-emerald-700 font-medium flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 inline shrink-0" />
+                            {vettingStatus.summaryText}
+                          </span>
+                        ) : (
+                          <span className="text-amber-800 font-medium flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 inline shrink-0" />
+                            {vettingStatus.error || `Please account for all activities from ${vettingWindow.startFormatted} to Present.`}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                        vettingStatus.isValid
+                          ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-800 border-amber-500/30'
+                      }`}>
+                        {vettingStatus.isValid ? 'Timeline Complete' : 'Timeline Incomplete'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 {evidenceError && (
                   <div key="evidence-banner" className="flex items-start gap-3 p-4 rounded-xl border border-rose-200 bg-rose-50 animate-pop-in">
                     <div>
@@ -1196,7 +1211,20 @@ export const MultiStepApplyForm: React.FC = () => {
                         )}
                       </div>
                       <div className="relative">
-                        <label className="block text-sm font-medium text-secondary mb-1.5">To (month & year) <span style={{ color: coverageInvalid() ? '#e11d48' : '#AF7C28' }}>•</span></label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-sm font-medium text-secondary">To (month & year) <span style={{ color: coverageInvalid() ? '#e11d48' : '#AF7C28' }}>•</span></label>
+                          <button
+                            type="button"
+                            onClick={() => updateActivity(activity.id, 'to', 'Present')}
+                            className={`text-[11px] font-semibold px-2 py-0.5 rounded transition-colors ${
+                              activity.to === 'Present' 
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold' 
+                                : 'text-[#AF7C28] hover:bg-amber-50'
+                            }`}
+                          >
+                            ✓ Ongoing / Present
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => openDatePicker(activity.id, 'to')}

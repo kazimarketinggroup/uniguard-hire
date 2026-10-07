@@ -3,6 +3,7 @@ import { useRecruitment } from '../../context/RecruitmentContext';
 import type { VettingCheckType, CheckStatus, ApplicationStage } from '../../types/recruitment';
 import { supabase } from '../../lib/supabase';
 import { Avatar } from '../common/Avatar';
+import { validateFiveYearHistory, getFiveYearVettingWindow } from '../../utils/vettingValidation';
 import { 
   X, 
   ShieldCheck, 
@@ -540,14 +541,46 @@ export const ApplicantDrawer: React.FC = () => {
                       )}
 
                       {/* --- CUSTOM WIDGET 3: 5-YEAR REFERENCE CHECK (ALL 5 YEARS VISIBLE) --- */}
-                      {check.type === 'references' && (
-                        <div className="p-3.5 rounded-xl border border-line bg-panel-2 space-y-3">
-                          <div className="flex items-center justify-between pt-1">
-                            <span className="text-xs font-bold text-primary">Candidate Submitted 5-Year History:</span>
-                            <span className="text-[11px] font-mono text-tertiary">
-                              {((fd.activities || []) as any[]).length} Entry / Entries Listed
-                            </span>
-                          </div>
+                      {check.type === 'references' && (() => {
+                        const activities = (fd.activities || []) as any[];
+                        const vettingWindow = getFiveYearVettingWindow();
+                        const vettingAudit = validateFiveYearHistory(activities);
+                        return (
+                          <div className="p-3.5 rounded-xl border border-line bg-panel-2 space-y-3">
+                            <div className="flex items-center justify-between pt-1">
+                              <span className="text-xs font-bold text-primary">Candidate Submitted 5-Year History:</span>
+                              <span className="text-[11px] font-mono text-tertiary">
+                                {activities.length} Entry / Entries Listed
+                              </span>
+                            </div>
+
+                            {/* BS 7858 Compliance Audit Indicator */}
+                            {activities.length > 0 && (
+                              <div className={`p-2.5 rounded-lg border text-xs flex items-start gap-2.5 ${
+                                vettingAudit.isValid
+                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900'
+                                  : 'border-amber-500/30 bg-amber-500/10 text-amber-900'
+                              }`}>
+                                {vettingAudit.isValid ? (
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                ) : (
+                                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                )}
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-[11px]">
+                                      BS 7858 Audit: {vettingAudit.isValid ? 'Compliance Passed' : 'Compliance Flag'}
+                                    </span>
+                                    <span className="text-[10px] font-mono opacity-80">
+                                      ({vettingWindow.startFormatted} → {vettingWindow.endFormatted})
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] leading-relaxed opacity-90">
+                                    {vettingAudit.isValid ? vettingAudit.summaryText : vettingAudit.error}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
 
                           {Array.isArray(fd.activities) && fd.activities.length > 0 ? (
                             <div className="space-y-2.5">
@@ -603,7 +636,8 @@ export const ApplicantDrawer: React.FC = () => {
                             </div>
                           )}
                         </div>
-                      )}
+                      );
+                    })()}
 
                       {/* --- CUSTOM WIDGET 4: CREDIT CHECK --- */}
                       {check.type === 'credit_check' && (

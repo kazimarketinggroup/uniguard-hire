@@ -6,6 +6,29 @@ Comprehensive changelog and operational history tracking issues encountered, tim
 
 ## Log Entries
 
+### [2026-10-07 20:35:00 UTC+6] Dynamic BS 7858 5-Year Vetting Timeline Validation & Recency Gate
+* **Issue:** 
+  * In the candidate application form, the 5-year history check previously only summed the cumulative duration across entries (`months < 59`).
+  * If a candidate submitted past activities that spanned 5+ years (e.g. candidate Klevis submitting `2011-09-05` to `2019-05-29` = 92 months), the system marked it as valid even though it ended over 5 years ago and had zero coverage of the recent 5 years up to the present date.
+  * Incomplete histories (e.g., `2015–2020` or disjointed entries with multi-year gaps) bypassed validation.
+* **Components Affected:** 
+  * [`src/utils/vettingValidation.ts`](file:///e:/Uniguard%20Hire/src/utils/vettingValidation.ts)
+  * [`src/components/public/MultiStepApplyForm.tsx`](file:///e:/Uniguard%20Hire/src/components/public/MultiStepApplyForm.tsx)
+  * [`src/components/applicants/ApplicantDrawer.tsx`](file:///e:/Uniguard%20Hire/src/components/applicants/ApplicantDrawer.tsx)
+* **Root Cause:** 
+  * Cumulative month aggregation without anchoring the required vetting window dynamically to `[Today - 5 years]` through `[Today]`.
+  * Absence of recency check verifying that the latest activity extends to "Present" (or $\le 31$ days from today).
+  * Absence of gap detection between non-contiguous intervals.
+* **Resolution / Fix:**
+  1. **Dynamic Vetting Engine:** Created `src/utils/vettingValidation.ts` to dynamically calculate the 5-year window from `new Date()` (never hardcoded, auto-advancing annually).
+  2. **Recency Enforcement:** Validates that the most recent activity reaches "Present" (or within 31 days). If an applicant's latest entry ended in the past (e.g. 2019 or 2020), it is immediately blocked with a clear prompt to add current activities or career breaks.
+  3. **Start Date Threshold:** Enforces that the timeline reaches back at least 5 years ago from the present date.
+  4. **BS 7858 Gap Detection:** Detects any gaps exceeding 31 calendar days between activities and requires them to be declared as an explicit "Career Break / Gap" entry.
+  5. **Dynamic Candidate Monitor:** Added an active timeline tracker to Step 2 in `MultiStepApplyForm.tsx` displaying the exact required period (e.g. `October 2021 → Present (October 2026)`) and live validation feedback.
+  6. **Admin Compliance Audit Badge:** Added an automated BS 7858 compliance indicator to `ApplicantDrawer.tsx` widget 3 so vetting officers instantly see whether an applicant's submitted history satisfies continuous coverage or flags gaps/outdated timelines.
+
+---
+
 ### [2026-09-24 13:45:10 UTC+6] 5-Year History Evidence 404 & Corrupted PDF Download Bug
 * **Issue:** 
   * In the candidate drawer, clicking "Download" or "View Proof" on an applicant's 5-Year History evidence (e.g. Harisundar Kumar's "The print LOR.pdf") downloaded an unreadable 88-byte corrupted `.pdf` file.
